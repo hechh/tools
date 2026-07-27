@@ -13,31 +13,9 @@ const StringTemplStr = `/*
 */
 
 package {{.Pkg}}
-
-import (
-	"framework/define"
-	"framework/library/crypto"
-	"framework/pkg/mlog"
-	"framework/pkg/redispool"
-	"fmt"
-	"richgame/server/common/pb"
-	"richgame/server/pkg/database"
-	"time"
-
-	"google.golang.org/protobuf/proto"
-)
-
 `
 
 const StringMethods = `
-
-var {{.Name}}Type = {{.NewTypeFuncName}}[pb.{{.Name}}{{if .GetNonUidKeys}}, {{GetTypeList .GetNonUidKeys}}{{end}}](
-	{{.GetClientFuncExpr}},
-	GetKey,
-	{{- if .UsesCache}}
-	database.ACTOR_CACHE_FLAG,
-	{{- end}}
-)
 
 func GetKey(ctx define.IContext{{if .GetNonUidKeys}}, {{GetArgs .GetNonUidKeys}}{{end}}) string {
 {{- if .Keys}}
@@ -48,15 +26,51 @@ func GetKey(ctx define.IContext{{if .GetNonUidKeys}}, {{GetArgs .GetNonUidKeys}}
 }
 
 func Get(ctx define.IContext{{if .GetNonUidKeys}}, {{GetArgs .GetNonUidKeys}}{{end}}) (*pb.{{.Name}}, bool, error) {
-	return {{.Name}}Type.Get({{.GetKeyCallArgs}})
+	key := GetKey({{.GetKeyCallArgs}})
+	if obj, ok := ctx.GetCache(key); ok {
+		return obj.(*pb.{{.Name}}), false, nil
+	}
+	client := {{.ClientCallExpr}}
+	if client == nil {
+		return nil, false, fmt.Errorf("{{.DbErrorHint}}数据库不存在")
+	}
+	body, err := client.Get(key)
+	if err != nil {
+		return nil, false, err
+	}
+	if len(body) <= 0 {
+		return nil, true, nil
+	}
+	item := &pb.{{.Name}}{}
+	if err := item.UnmarshalVT([]byte(body)); err != nil {
+		return nil, false, err
+	}
+	ctx.SetCache(key, item)
+	return item, false, nil
 }
 
 func Set(ctx define.IContext{{if .GetNonUidKeys}}, {{GetArgs .GetNonUidKeys}}{{end}}, val *pb.{{.Name}}, expiration time.Duration) error {
-	return {{.Name}}Type.Set({{.GetKeyCallArgs}}, val, expiration)
+	key := GetKey({{.GetKeyCallArgs}})
+	client := {{.ClientCallExpr}}
+	if client == nil {
+		return fmt.Errorf("{{.DbErrorHint}}数据库不存在")
+	}
+	buf, err := val.MarshalVT()
+	if err != nil {
+		return err
+	}
+	ctx.SetCache(key, val)
+	return client.Set(key, string(buf), expiration)
 }
 
 func Del(ctx define.IContext{{if .GetNonUidKeys}}, {{GetArgs .GetNonUidKeys}}{{end}}) error {
-	return {{.Name}}Type.Del({{.GetKeyCallArgs}})
+	client := {{.ClientCallExpr}}
+	if client == nil {
+		return fmt.Errorf("{{.DbErrorHint}}数据库不存在")
+	}
+	key := GetKey({{.GetKeyCallArgs}})
+	_, err := client.Del(key)
+	return err
 }
 
 func Remove(ctx define.IContext, {{GetBatchShardArg .}}keys ...string) error {
@@ -71,22 +85,15 @@ func Remove(ctx define.IContext, {{GetBatchShardArg .}}keys ...string) error {
 	return err
 }
 
-/*
-func Expire(ctx define.IContext{{if .GetFuncExtraParams}}, {{GetArgs .GetFuncExtraParams}}{{end}}, expiration time.Duration) (bool, error) {
-	client := {{.ClientCallExpr}}
-	if client == nil {
-		return false, fmt.Errorf("{{.DbErrorHint}}数据库不存在")
-	}
-	return client.Expire(GetKey({{.GetKeyCallArgs}}), expiration)
-}
-*/
-
 func Change(ctx define.IContext{{if .GetNonUidKeys}}, {{GetArgs .GetNonUidKeys}}{{end}}) {
-	{{.Name}}Type.Change({{.GetKeyCallArgs}})
+	ctx.Change(GetKey({{.GetKeyCallArgs}}))
 }
 
 func Read(ctx define.IContext{{if .GetNonUidKeys}}, {{GetArgs .GetNonUidKeys}}{{end}}) *pb.{{.Name}} {
-	return {{.Name}}Type.Read({{.GetKeyCallArgs}})
+	if obj, ok := ctx.GetCache(GetKey({{.GetKeyCallArgs}})); ok {
+		return obj.(*pb.{{.Name}})
+	}
+	return nil
 }
 
 func MSet(ctx define.IContext, {{GetBatchShardArg .}}vals map[string]*pb.{{.Name}}) error {
@@ -97,12 +104,12 @@ func MSet(ctx define.IContext, {{GetBatchShardArg .}}vals map[string]*pb.{{.Name
 	args := []any{}
 	for key, val := range vals {
 		args = append(args, key)
-		if buf, err := crypto.Marshal(val); err != nil {
+		buf, err := val.MarshalVT()
+		if err != nil {
 			return err
-		} else {
-			mlog.Trace("[redis-save]", key, val)
-			args = append(args, string(buf))
 		}
+		mlog.Trace("[redis-save]", key, val)
+		args = append(args, string(buf))
 	}
 	return client.MSet(args...)
 }
@@ -137,18 +144,18 @@ func MGet(ctx define.IContext, {{GetBatchShardArg .}}keys ...string) (map[string
 		case string:
 			if len(v) > 0 {
 				item := &pb.{{.Name}}{}
-				if err := crypto.Unmarshal([]byte(v), item); err == nil {
+				if err := item.UnmarshalVT([]byte(v)); err == nil {
 					mlog.Trace("[redis-load]", key, item)
-					ctx.SetCache(key, item, true)
+					ctx.SetCache(key, item)
 					rets[key] = item
 				}
 			}
 		case []byte:
 			if len(v) > 0 {
 				item := &pb.{{.Name}}{}
-				if err := crypto.Unmarshal(v, item); err == nil {
+				if err := item.UnmarshalVT(v); err == nil {
 					mlog.Trace("[redis-load]", key, item)
-					ctx.SetCache(key, item, true)
+					ctx.SetCache(key, item)
 					rets[key] = item
 				}
 			}
@@ -164,32 +171,9 @@ const HashTemplStr = `/*
 */
 
 package {{.Pkg}}
-
-import (
-	"framework/define"
-	"framework/library/crypto"
-	"framework/pkg/mlog"
-	"framework/pkg/redispool"
-	"fmt"
-	"richgame/server/common/pb"
-	"richgame/server/pkg/database"
-	"time"
-
-	"google.golang.org/protobuf/proto"
-)
-
 `
 
 const HashMethods = `
-
-var {{.Name}}Type = {{.NewHashTypeFuncName}}[pb.{{.Name}}{{if .GetNonUidFields}}, {{GetTypeList .GetNonUidFields}}{{end}}](
-	{{.GetClientFuncExpr}},
-	GetKey,
-	GetField,
-	{{- if .UsesCache}}
-	database.ACTOR_CACHE_FLAG,
-	{{- end}}
-)
 
 func GetKey(ctx define.IContext{{if .GetNonUidKeys}}, {{GetArgs .GetNonUidKeys}}{{end}}) string {
 {{- if .Keys}}
@@ -208,15 +192,55 @@ func GetField(ctx define.IContext{{if .GetNonUidFields}}, {{GetArgs .GetNonUidFi
 }
 
 func HGet(ctx define.IContext{{if .GetHashFuncExtraParams}}, {{GetArgs .GetHashFuncExtraParams}}{{end}}) (*pb.{{.Name}}, bool, error) {
-	return {{.Name}}Type.HGet({{.GetFieldCallArgs}})
+	key := GetKey({{.GetKeyCallArgs}})
+	field := GetField({{.GetFieldCallArgs}})
+	cacheKey := key + field
+	if obj, ok := ctx.GetCache(cacheKey); ok {
+		return obj.(*pb.{{.Name}}), false, nil
+	}
+	client := {{.ClientCallExpr}}
+	if client == nil {
+		return nil, false, fmt.Errorf("{{.DbErrorHint}}数据库不存在")
+	}
+	body, err := client.HGet(key, field)
+	if err != nil {
+		return nil, false, err
+	}
+	if len(body) <= 0 {
+		return nil, true, nil
+	}
+	item := &pb.{{.Name}}{}
+	if err := item.UnmarshalVT([]byte(body)); err != nil {
+		return nil, false, err
+	}
+	ctx.SetCache(cacheKey, item)
+	return item, false, nil
 }
 
-func HSet(ctx define.IContext{{if .GetHashFuncExtraParams}}, {{GetArgs .GetHashFuncExtraParams}}{{end}}, data *pb.{{.Name}}) error {
-	return {{.Name}}Type.HSet({{.GetFieldCallArgs}}, data)
+func HSet(ctx define.IContext{{if .GetHashFuncExtraParams}}, {{GetArgs .GetHashFuncExtraParams}}{{end}}, val *pb.{{.Name}}) error {
+	key := GetKey({{.GetKeyCallArgs}})
+	field := GetField({{.GetFieldCallArgs}})
+	client := {{.ClientCallExpr}}
+	if client == nil {
+		return fmt.Errorf("{{.DbErrorHint}}数据库不存在")
+	}
+	buf, err := val.MarshalVT()
+	if err != nil {
+		return err
+	}
+	ctx.SetCache(key+field, val)
+	return client.HSet(key, field, string(buf))
 }
 
 func HDel(ctx define.IContext{{if .GetHashFuncExtraParams}}, {{GetArgs .GetHashFuncExtraParams}}{{end}}) error {
-	return {{.Name}}Type.HDel({{.GetFieldCallArgs}})
+	client := {{.ClientCallExpr}}
+	if client == nil {
+		return fmt.Errorf("{{.DbErrorHint}}数据库不存在")
+	}
+	key := GetKey({{.GetKeyCallArgs}})
+	field := GetField({{.GetFieldCallArgs}})
+	_, err := client.HDel(key, field)
+	return err
 }
 
 func HRemove(ctx define.IContext{{if .GetNonUidKeys}}, {{GetArgs .GetNonUidKeys}}{{end}}, fields ...string) error {
@@ -232,22 +256,16 @@ func HRemove(ctx define.IContext{{if .GetNonUidKeys}}, {{GetArgs .GetNonUidKeys}
 	return err
 }
 
-/*
-func HExpire(ctx define.IContext{{if .GetNonUidKeys}}, {{GetArgs .GetNonUidKeys}}{{end}}, expiration time.Duration) (bool, error) {
-	client := {{.ClientCallExpr}}
-	if client == nil {
-		return false, fmt.Errorf("{{.DbErrorHint}}数据库不存在")
-	}
-	return client.Expire(GetKey({{.GetKeyCallArgs}}), expiration)
-}
-*/
-
 func Change(ctx define.IContext{{if .GetHashFuncExtraParams}}, {{GetArgs .GetHashFuncExtraParams}}{{end}}) {
-	{{.Name}}Type.Change({{.GetFieldCallArgs}})
+	ctx.Change(GetKey({{.GetKeyCallArgs}}) + GetField({{.GetFieldCallArgs}}))
 }
 
 func Read(ctx define.IContext{{if .GetHashFuncExtraParams}}, {{GetArgs .GetHashFuncExtraParams}}{{end}}) *pb.{{.Name}} {
-	return {{.Name}}Type.Read({{.GetFieldCallArgs}})
+	cacheKey := GetKey({{.GetKeyCallArgs}}) + GetField({{.GetFieldCallArgs}})
+	if obj, ok := ctx.GetCache(cacheKey); ok {
+		return obj.(*pb.{{.Name}})
+	}
+	return nil
 }
 
 func HGetAll(ctx define.IContext{{if .GetNonUidKeys}}, {{GetArgs .GetNonUidKeys}}{{end}}) (ret map[string]*pb.{{.Name}}, err error) {
@@ -266,7 +284,7 @@ func HGetAll(ctx define.IContext{{if .GetNonUidKeys}}, {{GetArgs .GetNonUidKeys}
 			continue
 		}
 		data := &pb.{{.Name}}{}
-		if err := crypto.Unmarshal([]byte(item), data); err != nil {
+		if err := data.UnmarshalVT([]byte(item)); err != nil {
 			return nil, err
 		}
 		mlog.Tracef("[redis-load]", key, k, data)
@@ -323,11 +341,11 @@ func HMGet(ctx define.IContext{{if .GetNonUidKeys}}, {{GetArgs .GetNonUidKeys}}{
 			return nil, fmt.Errorf("数据类型不支持")
 		}
 		item := &pb.{{.Name}}{}
-		if err := crypto.Unmarshal(buf, item); err != nil {
+		if err := item.UnmarshalVT(buf); err != nil {
 			return nil, err
 		}
 		mlog.Trace("[redis-load]", key, field, item)
-		ctx.SetCache(key+field, item, true)
+		ctx.SetCache(key+field, item)
 		rets[field] = item
 	}
 	return rets, nil
@@ -341,7 +359,7 @@ func HMSet(ctx define.IContext{{if .GetNonUidKeys}}, {{GetArgs .GetNonUidKeys}}{
 	key := GetKey({{.GetKeyCallArgs}})
 	vals := []any{}
 	for k, v := range data {
-		buf, err := crypto.Marshal(v)
+		buf, err := v.MarshalVT()
 		if err != nil {
 			return err
 		}

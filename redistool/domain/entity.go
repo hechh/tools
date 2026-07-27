@@ -69,70 +69,18 @@ func (m *RedisString) GetDbType() DbType     { return m.DbType }
 func (m *RedisString) GetDbName() string     { return m.DbName }
 func (m *RedisString) GetShardField() *Field { return m.ShardField }
 
-// UsesConstant 是否使用 database 包的常量引用（global:ConstName 格式）
-func (m *RedisString) UsesConstant() bool {
-	return m.DbType == DbTypeGlobal && m.ShardField == nil
-}
+// UsesCache 是否启用cache规则
+func (m *RedisString) UsesCache() bool { return m.UseCache }
+func (m *RedisHash) UsesCache() bool   { return m.UseCache }
 
-// UsesCache 是否启用cache规则（模板条件判断）
-func (m *RedisString) UsesCache() bool {
-	return m.UseCache
-}
-
-// GetCacheKeyExpr 生成缓存key的表达式（GetKey(ctx, ...) 格式）
-// 例: Keys=[{Uid,uint64}] → "GetKey(ctx)"
-//
-//	Keys=[] (静态key) → "GetKey(ctx)"
-//	Keys=[{Username,string}] → "GetKey(ctx, Username)"
+// GetCacheKeyExpr 生成缓存key的表达式
 func (m *RedisString) GetCacheKeyExpr() string {
 	return "GetKey(" + m.GetKeyCallArgs() + ")"
 }
 
-// GetNonUidKeys 返回Keys中名称不为uid的字段列表（用于GetByCache函数签名中的显式参数）
+// GetNonUidKeys 返回Keys中名称不为uid的字段列表
 func (m *RedisString) GetNonUidKeys() []*Field {
 	var result []*Field
-	for _, f := range m.Keys {
-		if !strings.EqualFold(f.Name, "uid") {
-			result = append(result, f)
-		}
-	}
-	return result
-}
-
-// NewTypeFuncName 返回对应的 database.NewStringType / NewStringType1 / NewStringType2 泛型函数名
-func (m *RedisString) NewTypeFuncName() string {
-	switch len(m.GetNonUidKeys()) {
-	case 1:
-		return "database.NewStringType1"
-	case 2:
-		return "database.NewStringType2"
-	default:
-		return "database.NewStringType"
-	}
-}
-
-// GetClientFuncExpr 返回 client 函数引用表达式，只使用 database 包中预定义的函数
-func (m *RedisString) GetClientFuncExpr() string {
-	switch m.DbType {
-	case DbTypeShards:
-		return "database.GetUidClient"
-	case DbTypeGlobal:
-		if m.UsesConstant() && m.DbName == "REDIS_PLAYER_CACHE" {
-			return "database.GetPlayerCacheClient"
-		}
-		return "database.GetGlobalClient"
-	default:
-		return "database.GetGlobalClient"
-	}
-}
-
-// GetFuncExtraParams 返回 Get/Set 函数签名中 ctx 之后的额外参数（排除 uid，包含非 uid 的分片字段）
-func (m *RedisString) GetFuncExtraParams() []*Field {
-	var result []*Field
-	sf := m.ShardField
-	if sf != nil && !strings.EqualFold(sf.Name, "uid") && !m.IsShardKeySame() {
-		result = append(result, sf)
-	}
 	for _, f := range m.Keys {
 		if !strings.EqualFold(f.Name, "uid") {
 			result = append(result, f)
@@ -161,15 +109,14 @@ func (m *RedisString) GetCacheCallArg() string {
 	return strings.Join(args, ", ")
 }
 
-// ClientCallExpr 返回内联客户端获取表达式（ctx版本，uid字段替换为 ctx.GetUid()）
-// 用于 Get/Set 等带 ctx 参数的函数，分片路由的 uid 自动使用 ctx 中的值
+// ClientCallExpr 返回内联客户端获取表达式（ctx版本）
 func (m *RedisString) ClientCallExpr() string {
 	switch m.DbType {
 	case DbTypeGlobal:
 		if m.ShardField != nil {
 			return fmt.Sprintf(`redispool.GetByName(%s)`, m.ShardField.Name)
 		}
-		return fmt.Sprintf(`redispool.GetByName(database.%s)`, m.DbName)
+		return fmt.Sprintf(`redispool.GetByName("%s")`, m.DbName)
 	case DbTypeShards:
 		if strings.EqualFold(m.ShardField.Name, "uid") {
 			return `redispool.GetByUid(ctx.GetUid())`
@@ -216,48 +163,7 @@ func (m *RedisString) GetKeyFmtArgs() string {
 }
 
 // --- RedisHash 实现 ModelWithDbInfo ---
-func (m *RedisHash) GetDbType() DbType     { return m.DbType }
-func (m *RedisHash) GetDbName() string     { return m.DbName }
-func (m *RedisHash) GetShardField() *Field { return m.ShardField }
-
-// UsesConstant 是否使用 database 包的常量引用（global:ConstName 格式）
-func (m *RedisHash) UsesConstant() bool {
-	return m.DbType == DbTypeGlobal && m.ShardField == nil
-}
-
-// UsesCache 是否启用cache规则（模板条件判断，Hash用HGetByCache）
-func (m *RedisHash) UsesCache() bool {
-	return m.UseCache
-}
-
-// NewHashTypeFuncName 返回对应的 database.NewHashType0/1F/2F/3F 泛型函数名
-func (m *RedisHash) NewHashTypeFuncName() string {
-	switch len(m.GetNonUidFields()) {
-	case 1:
-		return "database.NewHashType1F"
-	case 2:
-		return "database.NewHashType2F"
-	case 3:
-		return "database.NewHashType3F"
-	default:
-		return "database.NewHashType0"
-	}
-}
-
-// GetClientFuncExpr 返回 client 函数引用表达式，只使用 database 包中预定义的函数
-func (m *RedisHash) GetClientFuncExpr() string {
-	switch m.DbType {
-	case DbTypeShards:
-		return "database.GetUidClient"
-	case DbTypeGlobal:
-		if m.UsesConstant() && m.DbName == "REDIS_PLAYER_CACHE" {
-			return "database.GetPlayerCacheClient"
-		}
-		return "database.GetGlobalClient"
-	default:
-		return "database.GetGlobalClient"
-	}
-}
+func (m *RedisHash) GetDbType() DbType { return m.DbType }
 
 // GetNonUidKeys 返回Keys中名称不为uid的字段列表
 func (m *RedisHash) GetNonUidKeys() []*Field {
@@ -335,14 +241,14 @@ func (m *RedisHash) GetFieldFmtArgs() string {
 	return strings.Join(args, ",")
 }
 
-// ClientCallExpr 返回ctx感知的客户端获取表达式（uid分片→ctx.GetUid()）
+// ClientCallExpr 返回ctx感知的客户端获取表达式
 func (m *RedisHash) ClientCallExpr() string {
 	switch m.DbType {
 	case DbTypeGlobal:
 		if m.ShardField != nil {
 			return fmt.Sprintf(`redispool.GetByName(%s)`, m.ShardField.Name)
 		}
-		return fmt.Sprintf(`redispool.GetByName(database.%s)`, m.DbName)
+		return fmt.Sprintf(`redispool.GetByName("%s")`, m.DbName)
 	case DbTypeShards:
 		if strings.EqualFold(m.ShardField.Name, "uid") {
 			return `redispool.GetByUid(ctx.GetUid())`
@@ -465,7 +371,7 @@ func (m *RedisString) ClientExpr() string {
 		if m.ShardField != nil {
 			return fmt.Sprintf(`redispool.GetByName(%s)`, m.ShardField.Name)
 		}
-		return fmt.Sprintf(`redispool.GetByName(database.%s)`, m.DbName) // 常量引用
+		return fmt.Sprintf(`redispool.GetByName("%s")`, m.DbName)
 	case DbTypeShards:
 		return fmt.Sprintf(`redispool.GetByUid(%s)`, m.ShardField.Name)
 	default:
@@ -478,7 +384,7 @@ func (m *RedisHash) ClientExpr() string {
 		if m.ShardField != nil {
 			return fmt.Sprintf(`redispool.GetByName(%s)`, m.ShardField.Name)
 		}
-		return fmt.Sprintf(`redispool.GetByName(database.%s)`, m.DbName) // 常量引用
+		return fmt.Sprintf(`redispool.GetByName("%s")`, m.DbName)
 	case DbTypeShards:
 		return fmt.Sprintf(`redispool.GetByUid(%s)`, m.ShardField.Name)
 	default:
@@ -493,7 +399,7 @@ func (m *RedisString) BatchClientExpr() string {
 		if m.ShardField != nil {
 			return fmt.Sprintf(`redispool.GetByName(%s)`, m.ShardField.Name)
 		}
-		return fmt.Sprintf(`redispool.GetByName(database.%s)`, m.DbName) // 常量引用
+		return fmt.Sprintf(`redispool.GetByName("%s")`, m.DbName)
 	case DbTypeShards:
 		return `redispool.GetById(shardId)`
 	default:
@@ -506,7 +412,7 @@ func (m *RedisHash) BatchClientExpr() string {
 		if m.ShardField != nil {
 			return fmt.Sprintf(`redispool.GetByName(%s)`, m.ShardField.Name)
 		}
-		return fmt.Sprintf(`redispool.GetByName(database.%s)`, m.DbName) // 常量引用
+		return fmt.Sprintf(`redispool.GetByName("%s")`, m.DbName)
 	case DbTypeShards:
 		return `redispool.GetById(shardId)`
 	default:
@@ -521,7 +427,7 @@ func (m *RedisString) DbErrorHint() string {
 		if m.ShardField != nil {
 			return m.ShardField.Name + "对应"
 		}
-		return "database." + m.DbName // 常量引用
+		return m.DbName
 	case DbTypeShards:
 		return m.ShardField.Name + "分片"
 	default:
@@ -534,7 +440,7 @@ func (m *RedisHash) DbErrorHint() string {
 		if m.ShardField != nil {
 			return m.ShardField.Name + "对应"
 		}
-		return "database." + m.DbName // 常量引用
+		return m.DbName
 	case DbTypeShards:
 		return m.ShardField.Name + "分片"
 	default:
