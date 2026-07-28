@@ -69,6 +69,30 @@ func (m *RedisString) GetDbType() DbType     { return m.DbType }
 func (m *RedisString) GetDbName() string     { return m.DbName }
 func (m *RedisString) GetShardField() *Field { return m.ShardField }
 
+// HasDbConst DbName 是否为固定字符串（需要生成 DBNAME 常量）
+func (m *RedisHash) HasDbConst() bool {
+	switch m.DbType {
+	case DbTypeGlobal:
+		return m.ShardField == nil
+	case DbTypeShards:
+		return false
+	default: // DbTypeStatic
+		return true
+	}
+}
+
+// HasDbConst DbName 是否为固定字符串（需要生成 DBNAME 常量）
+func (m *RedisString) HasDbConst() bool {
+	switch m.DbType {
+	case DbTypeGlobal:
+		return m.ShardField == nil
+	case DbTypeShards:
+		return false
+	default: // DbTypeStatic
+		return true
+	}
+}
+
 // UsesCache 是否启用cache规则
 func (m *RedisString) UsesCache() bool { return m.UseCache }
 func (m *RedisHash) UsesCache() bool   { return m.UseCache }
@@ -116,7 +140,7 @@ func (m *RedisString) ClientCallExpr() string {
 		if m.ShardField != nil {
 			return fmt.Sprintf(`redispool.GetByName(%s)`, m.ShardField.Name)
 		}
-		return fmt.Sprintf(`redispool.GetByName("%s")`, m.DbName)
+		return `redispool.GetByName(DBNAME)`
 	case DbTypeShards:
 		if strings.EqualFold(m.ShardField.Name, "uid") {
 			return `redispool.GetByUid(ctx.GetUid())`
@@ -248,7 +272,7 @@ func (m *RedisHash) ClientCallExpr() string {
 		if m.ShardField != nil {
 			return fmt.Sprintf(`redispool.GetByName(%s)`, m.ShardField.Name)
 		}
-		return fmt.Sprintf(`redispool.GetByName("%s")`, m.DbName)
+		return `redispool.GetByName(DBNAME)`
 	case DbTypeShards:
 		if strings.EqualFold(m.ShardField.Name, "uid") {
 			return `redispool.GetByUid(ctx.GetUid())`
@@ -371,11 +395,11 @@ func (m *RedisString) ClientExpr() string {
 		if m.ShardField != nil {
 			return fmt.Sprintf(`redispool.GetByName(%s)`, m.ShardField.Name)
 		}
-		return fmt.Sprintf(`redispool.GetByName("%s")`, m.DbName)
+		return `redispool.GetByName(DBNAME)`
 	case DbTypeShards:
 		return fmt.Sprintf(`redispool.GetByUid(%s)`, m.ShardField.Name)
 	default:
-		return fmt.Sprintf(`redispool.GetByName("%s")`, m.DbName)
+		return `redispool.GetByName(DBNAME)`
 	}
 }
 func (m *RedisHash) ClientExpr() string {
@@ -384,11 +408,11 @@ func (m *RedisHash) ClientExpr() string {
 		if m.ShardField != nil {
 			return fmt.Sprintf(`redispool.GetByName(%s)`, m.ShardField.Name)
 		}
-		return fmt.Sprintf(`redispool.GetByName("%s")`, m.DbName)
+		return `redispool.GetByName(DBNAME)`
 	case DbTypeShards:
 		return fmt.Sprintf(`redispool.GetByUid(%s)`, m.ShardField.Name)
 	default:
-		return fmt.Sprintf(`redispool.GetByName("%s")`, m.DbName)
+		return `redispool.GetByName(DBNAME)`
 	}
 }
 
@@ -399,11 +423,11 @@ func (m *RedisString) BatchClientExpr() string {
 		if m.ShardField != nil {
 			return fmt.Sprintf(`redispool.GetByName(%s)`, m.ShardField.Name)
 		}
-		return fmt.Sprintf(`redispool.GetByName("%s")`, m.DbName)
+		return `redispool.GetByName(DBNAME)`
 	case DbTypeShards:
 		return `redispool.GetById(shardId)`
 	default:
-		return fmt.Sprintf(`redispool.GetByName("%s")`, m.DbName)
+		return `redispool.GetByName(DBNAME)`
 	}
 }
 func (m *RedisHash) BatchClientExpr() string {
@@ -412,11 +436,11 @@ func (m *RedisHash) BatchClientExpr() string {
 		if m.ShardField != nil {
 			return fmt.Sprintf(`redispool.GetByName(%s)`, m.ShardField.Name)
 		}
-		return fmt.Sprintf(`redispool.GetByName("%s")`, m.DbName)
+		return `redispool.GetByName(DBNAME)`
 	case DbTypeShards:
 		return `redispool.GetById(shardId)`
 	default:
-		return fmt.Sprintf(`redispool.GetByName("%s")`, m.DbName)
+		return `redispool.GetByName(DBNAME)`
 	}
 }
 

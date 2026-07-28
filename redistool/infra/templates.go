@@ -13,7 +13,9 @@ const StringTemplStr = `/*
 */
 
 package {{.Pkg}}
-`
+{{if .HasDbConst}}
+const DBNAME = "{{.DbName}}"
+{{end}}`
 
 const StringMethods = `
 
@@ -171,7 +173,9 @@ const HashTemplStr = `/*
 */
 
 package {{.Pkg}}
-`
+{{if .HasDbConst}}
+const DBNAME = "{{.DbName}}"
+{{end}}`
 
 const HashMethods = `
 
