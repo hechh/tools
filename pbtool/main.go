@@ -1,28 +1,37 @@
 package main
 
 import (
-	"flag"
-
-	futil "github.com/hechh/library/base/fileutil"
+	"github.com/hechh/library/base/fileutil"
 	"github.com/hechh/tools/pbtool/internal"
+	"github.com/spf13/cobra"
 )
 
 func main() {
 	var src string
-	flag.StringVar(&src, "src", "", ".pb.go文件目录")
-	flag.Parse()
 
-	files, err := futil.Glob(src, ".*\\.pb\\.go", true)
-	if err != nil {
-		panic(err)
+	cmd := &cobra.Command{
+		Use:   "pbtool",
+		Short: ".pb.go 辅助方法生成器",
+		Long: "扫描 .pb.go 文件，自动为 protobuf message 生成 SetRspHead/GetRspHead、" +
+			"ToDB/FromDB、ConfigS 只读包装等辅助方法。",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			files, err := fileutil.Glob(src, ".*\\.pb\\.go", true)
+			if err != nil {
+				return err
+			}
+
+			parser := &internal.Parser{}
+			if err := fileutil.ParseFiles(parser, files...); err != nil {
+				return err
+			}
+			return parser.Gen(src)
+		},
 	}
 
-	parser := &internal.Parser{}
-	if err := futil.ParseFiles(parser, files...); err != nil {
-		panic(err)
-	}
-	// 生成文件
-	if err := parser.Gen(src); err != nil {
+	cmd.Flags().StringVar(&src, "src", "", ".pb.go文件目录")
+	cmd.MarkFlagRequired("src")
+
+	if err := cmd.Execute(); err != nil {
 		panic(err)
 	}
 }
