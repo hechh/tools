@@ -4,7 +4,7 @@ go 1.26.1
 
 require (
 	github.com/bufbuild/protocompile v0.14.1
-	github.com/hechh/library v1.1.0
+	github.com/hechh/library v1.5.0
 	github.com/iancoleman/strcase v0.3.0
 	github.com/spf13/cast v1.10.0
 	github.com/spf13/cobra v1.10.2
