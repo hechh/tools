@@ -5,7 +5,7 @@
 ```
 src/
 ├── framework/   # 主框架（go.work 工作区）
-├── library/     # 公共库（被 framework 依赖）
+├── library/     # 公共库（开源，被 framework 依赖）
 └── tools/       # 辅助工具
 ```
 
@@ -13,33 +13,35 @@ src/
 
 ## 环境配置
 
-### 前置条件
+`library`（`github.com/hechh/library`）是公开仓库，但新版本发布后 Go 代理和 sum 数据库需要同步时间。在此期间 `go mod tidy` 可能报错：
 
-`framework` 依赖 `library` 模块（`github.com/hechh/library`）。该模块为私有仓库，需要在 Go 中配置跳过公共代理和校验：
+```
+verifying module: github.com/hechh/library@v1.0.0:
+reading https://goproxy.cn/sumdb/sum.golang.org/lookup/... : 404 Not Found
+```
+
+只需跳过 sumdb 校验即可（代理的 `direct` 回退能正常拉取代码）：
 
 ```bash
-go env -w GOPRIVATE=github.com/hechh/*
+go env -w GONOSUMDB=github.com/hechh/library
 ```
 
-> `GOPRIVATE` 相当于同时启用 `GONOPROXY` + `GONOSUMDB`，只需设这一个即可。
+> 不推荐设 `GOPRIVATE`——它是为私有仓库设计的，公开仓库用 `GONOSUMDB` 就够了。
 
-### 为什么需要配置 GOPRIVATE？
+### 为什么公开仓库也会报错？
 
-`go mod tidy` 会解析完整依赖图并验证所有模块。如果没有配置 `GOPRIVATE`，Go 会尝试从公共代理（如 `goproxy.cn`）下载私有模块，导致以下错误：
+Go 模块解析流程：
 
 ```
-go: github.com/hechh/library@v1.0.0: verifying module: ... 404 Not Found
+go mod tidy
+  → GOPROXY（如 goproxy.cn）查找模块
+    → 缓存未命中（新 tag 还没同步）
+      → sum.golang.org 查校验和
+        → 同样没有新版本的记录
+          → 404 报错
 ```
 
-设置 `GOPRIVATE=github.com/hechh/*` 后，Go 会直连源仓库（git），不再走公共代理和 sum 数据库校验。
-
-### 各环境变量说明
-
-| 变量 | 作用 |
-|------|------|
-| `GOPRIVATE` | 总开关，同时启用 `GONOPROXY` + `GONOSUMDB` 的效果 |
-| `GONOPROXY` | 跳过模块代理，直接从源仓库（git）拉取 |
-| `GONOSUMDB` | 跳过公共 sum 数据库校验（sum.golang.org） |
+这是代理同步延迟导致的，与仓库公开/私有无关。等几分钟到几小时后代理同步完成，不设 `GONOSUMDB` 也能正常通过。
 
 ## 开发
 
