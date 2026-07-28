@@ -1,6 +1,8 @@
 package main
 
 import (
+	"path/filepath"
+
 	"github.com/hechh/library/base/fileutil"
 	"github.com/hechh/tools/redistool/app"
 	"github.com/hechh/tools/redistool/domain"
@@ -24,7 +26,7 @@ func main() {
 			astParser := infra.NewASTParser(ctx)
 
 			// 3. 扫描并解析所有.pb.go文件
-			files, err := fileutil.Glob(src, ".*\\.pb\\.go", true)
+			files, err := fileutil.Glob(filepath.Join(src, "*.pb.go"), true)
 			if err != nil {
 				return err
 			}
