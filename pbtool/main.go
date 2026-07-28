@@ -28,7 +28,7 @@ func main() {
 		},
 	}
 
-	cmd.Flags().StringVar(&src, "src", "", ".pb.go文件目录")
+	cmd.Flags().StringVarP(&src, "src", "s", "", ".pb.go文件目录")
 	cmd.MarkFlagRequired("src")
 
 	if err := cmd.Execute(); err != nil {

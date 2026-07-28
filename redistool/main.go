@@ -52,8 +52,8 @@ func main() {
 		},
 	}
 
-	cmd.Flags().StringVar(&src, "src", "", ".pb.go源码文件目录")
-	cmd.Flags().StringVar(&dst, "dst", "", "生成代码输出目录")
+	cmd.Flags().StringVarP(&src, "src", "s", "", ".pb.go源码文件目录")
+	cmd.Flags().StringVarP(&dst, "dst", "d", "", "生成代码输出目录")
 	cmd.MarkFlagRequired("src")
 	cmd.MarkFlagRequired("dst")
 
