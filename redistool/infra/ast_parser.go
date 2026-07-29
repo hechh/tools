@@ -74,8 +74,18 @@ func (p *ASTParser) extractModels(spec *ast.TypeSpec) {
 			if m := p.buildStringModel(parts, spec.Name.Name); m != nil {
 				p.ctx.AddString(m)
 			}
+		case "string:cache":
+			if m := p.buildStringModel(parts, spec.Name.Name); m != nil {
+				m.UseCache = true
+				p.ctx.AddString(m)
+			}
 		case "hash":
 			if m := p.buildHashModel(parts, spec.Name.Name); m != nil {
+				p.ctx.AddHash(m)
+			}
+		case "hash:cache":
+			if m := p.buildHashModel(parts, spec.Name.Name); m != nil {
+				m.UseCache = true
 				p.ctx.AddHash(m)
 			}
 		}
@@ -207,5 +217,5 @@ func (p *ASTParser) buildHashModel(parts []string, structName string) *domain.Re
 
 // ruleType 提取规则类型标识
 func ruleType(s string) string {
-	return strings.TrimSuffix(strings.ToLower(strings.TrimPrefix(s, "@dbtool:")), ":cache")
+	return strings.ToLower(strings.TrimPrefix(s, "@dbtool:"))
 }

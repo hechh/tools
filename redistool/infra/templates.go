@@ -13,6 +13,15 @@ const StringTemplStr = `/*
 */
 
 package {{.Pkg}}
+
+import (
+	"fmt"
+	"richgame/common/pb"
+	"time"
+
+	"github.com/hechh/framework/define"
+	"github.com/hechh/library/redispool"
+)
 {{if .HasDbConst}}
 const DBNAME = "{{.DbName}}"
 {{end}}`
@@ -70,6 +79,37 @@ func Del({{GetArgs .Keys}}) error {
 	return err
 }
 
+func GetByCache(ctx define.IContext{{if NotUidArgs .Keys}}, {{NotUidArgs .Keys}}{{end}}) (*pb.{{.Name}}, bool, error) {
+	key := GetKey({{CtxCallArgs .Keys}})
+	if obj, ok := ctx.GetCache(key); ok {
+		return obj.(*pb.{{.Name}}), false, nil
+	}
+	item, isNew, err := Get({{CtxCallArgs .Keys}})
+	if err != nil {
+		return item, isNew, err
+	}
+	ctx.SetCache(key, item, {{.CacheFlag}})
+	return item, isNew, nil
+}
+
+func Change(ctx define.IContext{{if NotUidArgs .Keys}}, {{NotUidArgs .Keys}}{{end}}) {
+	ctx.Change(GetKey({{CtxCallArgs .Keys}}))
+}
+
+func Read(ctx define.IContext{{if NotUidArgs .Keys}}, {{NotUidArgs .Keys}}{{end}}) *pb.{{.Name}} {
+	if obj, ok := ctx.GetCache(GetKey({{CtxCallArgs .Keys}})); ok {
+		return obj.(*pb.{{.Name}})
+	}
+	return nil
+}
+
+func IsChanged(ctx define.IContext{{if NotUidArgs .Keys}}, {{NotUidArgs .Keys}}{{end}}) bool {
+	return ctx.IsChanged(GetKey({{CtxCallArgs .Keys}}))
+}
+
+func Reset(ctx define.IContext{{if NotUidArgs .Keys}}, {{NotUidArgs .Keys}}{{end}}) {
+	ctx.Reset(GetKey({{CtxCallArgs .Keys}}))
+}
 `
 
 const HashTemplStr = `/*
@@ -77,6 +117,14 @@ const HashTemplStr = `/*
 */
 
 package {{.Pkg}}
+
+import (
+	"fmt"
+	"richgame/common/pb"
+
+	"github.com/hechh/framework/define"
+	"github.com/hechh/library/redispool"
+)
 {{if .HasDbConst}}
 const DBNAME = "{{.DbName}}"
 {{end}}{{if not .Keys}}
@@ -164,6 +212,60 @@ func HLen({{GetArgs .Keys}}) (int64, error) {
 	return client.HLen({{if .Keys}}GetKey({{.GetKeyCallArgs}}){{else}}KEY{{end}})
 }
 
+func HGetByCache(ctx define.IContext{{if NotUidArgs .GetHashFuncExtraParams}}, {{NotUidArgs .GetHashFuncExtraParams}}{{end}}) (*pb.{{.Name}}, bool, error) {
+	{{- if .Keys}}
+	key := GetKey({{CtxCallArgs .Keys}})
+	{{- else}}
+	key := KEY
+	{{- end}}
+	field := GetField({{CtxCallArgs .Fields}})
+	cacheKey := key + field
+	if obj, ok := ctx.GetCache(cacheKey); ok {
+		return obj.(*pb.{{.Name}}), false, nil
+	}
+	item, isNew, err := HGet({{CtxCallArgs .GetHashFuncExtraParams}})
+	if err != nil {
+		return item, isNew, err
+	}
+	ctx.SetCache(cacheKey, item, {{.CacheFlag}})
+	return item, isNew, nil
+}
+
+func Change(ctx define.IContext{{if NotUidArgs .GetHashFuncExtraParams}}, {{NotUidArgs .GetHashFuncExtraParams}}{{end}}) {
+	{{- if .Keys}}
+	ctx.Change(GetKey({{CtxCallArgs .Keys}}) + GetField({{CtxCallArgs .Fields}}))
+	{{- else}}
+	ctx.Change(KEY + GetField({{CtxCallArgs .Fields}}))
+	{{- end}}
+}
+
+func Read(ctx define.IContext{{if NotUidArgs .GetHashFuncExtraParams}}, {{NotUidArgs .GetHashFuncExtraParams}}{{end}}) *pb.{{.Name}} {
+	{{- if .Keys}}
+	cacheKey := GetKey({{CtxCallArgs .Keys}}) + GetField({{CtxCallArgs .Fields}})
+	{{- else}}
+	cacheKey := KEY + GetField({{CtxCallArgs .Fields}})
+	{{- end}}
+	if obj, ok := ctx.GetCache(cacheKey); ok {
+		return obj.(*pb.{{.Name}})
+	}
+	return nil
+}
+
+func IsChanged(ctx define.IContext{{if NotUidArgs .GetHashFuncExtraParams}}, {{NotUidArgs .GetHashFuncExtraParams}}{{end}}) bool {
+	{{- if .Keys}}
+	return ctx.IsChanged(GetKey({{CtxCallArgs .Keys}}) + GetField({{CtxCallArgs .Fields}}))
+	{{- else}}
+	return ctx.IsChanged(KEY + GetField({{CtxCallArgs .Fields}}))
+	{{- end}}
+}
+
+func Reset(ctx define.IContext{{if NotUidArgs .GetHashFuncExtraParams}}, {{NotUidArgs .GetHashFuncExtraParams}}{{end}}) {
+	{{- if .Keys}}
+	ctx.Reset(GetKey({{CtxCallArgs .Keys}}) + GetField({{CtxCallArgs .Fields}}))
+	{{- else}}
+	ctx.Reset(KEY + GetField({{CtxCallArgs .Fields}}))
+	{{- end}}
+}
 `
 
 // TemplateFuncMap 模板函数映射，供模板渲染时使用
@@ -177,6 +279,8 @@ var TemplateFuncMap = template.FuncMap{
 	"JoinArgs":         templateJoinArgs,
 	"JoinArgsTrail":    templateJoinArgsTrail,
 	"ShardArgDecl":     templateShardArgDecl,
+	"NotUidArgs":       templateNotUidArgs,
+	"CtxCallArgs":      templateCtxCallArgs,
 }
 
 // BuildStringTemplate 构建String类型的Go代码模板
@@ -338,4 +442,34 @@ func templateShardArgDecl(m domain.ModelWithDbInfo, extraFields ...[]*domain.Fie
 		return ""
 	}
 	return fmt.Sprintf("%s %s", sf.Name, sf.Type)
+}
+
+// templateNotUidArgs 类似 GetArgs，但过滤掉名称含 "uid" 的字段
+// 用于 :cache 函数签名中去除 uid 参数（由 ctx.GetUid() 替代）
+func templateNotUidArgs(fields ...[]*domain.Field) string {
+	var filtered []*domain.Field
+	for _, list := range fields {
+		for _, f := range list {
+			if !strings.EqualFold(f.Name, "uid") {
+				filtered = append(filtered, f)
+			}
+		}
+	}
+	return templateGetArgs(filtered)
+}
+
+// templateCtxCallArgs 生成调用参数列表，uid 字段替换为 ctx.GetUid()
+// 用于 :cache 函数体中调用 GetKey/Get/HGet 等时传递参数
+func templateCtxCallArgs(fields ...[]*domain.Field) string {
+	var args []string
+	for _, list := range fields {
+		for _, f := range list {
+			if strings.EqualFold(f.Name, "uid") {
+				args = append(args, "ctx.GetUid()")
+			} else {
+				args = append(args, f.Name)
+			}
+		}
+	}
+	return strings.Join(args, ",")
 }

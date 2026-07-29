@@ -29,6 +29,7 @@ type RedisString struct {
 	ShardField *Field   // 分片路由字段
 	Format     string   // key格式串
 	Keys       []*Field // key中包含的动态字段列表
+	UseCache   bool     // 是否生成 GetByCache/Change/Read 缓存函数
 }
 
 // RedisHash Hash类型Redis模型定义
@@ -42,6 +43,7 @@ type RedisHash struct {
 	Keys       []*Field // key中的动态字段
 	FieldFmt   string   // redis field格式串
 	Fields     []*Field // field中的动态字段
+	UseCache   bool     // 是否生成 HGetByCache/Change/Read 缓存函数
 }
 
 // ParseContext 解析上下文，聚合所有从源码中提取的模型
@@ -66,6 +68,54 @@ type ModelWithDbInfo interface {
 func (m *RedisString) GetDbType() DbType     { return m.DbType }
 func (m *RedisString) GetDbName() string     { return m.DbName }
 func (m *RedisString) GetShardField() *Field { return m.ShardField }
+
+// UsesCache 是否生成缓存函数
+func (m *RedisString) UsesCache() bool { return m.UseCache }
+func (m *RedisHash) UsesCache() bool   { return m.UseCache }
+
+// CacheFlag 返回缓存标记位常量名
+// :cache 规则按 db 类型区分：global→GLOBAL_CACHE_FLAG, shards→SHARDS_CACHE_FLAG
+// 非 :cache 规则叠加 TEMP_CAHCE_FLAG：global→TEMP|GLOBAL, shards→TEMP|SHARDS
+func (m *RedisString) CacheFlag() string {
+	if m.UseCache {
+		switch m.DbType {
+		case DbTypeGlobal:
+			return "define.GLOBAL_CACHE_FLAG"
+		case DbTypeShards:
+			return "define.SHARDS_CACHE_FLAG"
+		default:
+			return "define.GLOBAL_CACHE_FLAG"
+		}
+	}
+	switch m.DbType {
+	case DbTypeGlobal:
+		return "define.TEMP_CAHCE_FLAG | define.GLOBAL_CACHE_FLAG"
+	case DbTypeShards:
+		return "define.TEMP_CAHCE_FLAG | define.SHARDS_CACHE_FLAG"
+	default:
+		return "define.TEMP_CAHCE_FLAG | define.GLOBAL_CACHE_FLAG"
+	}
+}
+func (m *RedisHash) CacheFlag() string {
+	if m.UseCache {
+		switch m.DbType {
+		case DbTypeGlobal:
+			return "define.GLOBAL_CACHE_FLAG"
+		case DbTypeShards:
+			return "define.SHARDS_CACHE_FLAG"
+		default:
+			return "define.GLOBAL_CACHE_FLAG"
+		}
+	}
+	switch m.DbType {
+	case DbTypeGlobal:
+		return "define.TEMP_CAHCE_FLAG | define.GLOBAL_CACHE_FLAG"
+	case DbTypeShards:
+		return "define.TEMP_CAHCE_FLAG | define.SHARDS_CACHE_FLAG"
+	default:
+		return "define.TEMP_CAHCE_FLAG | define.GLOBAL_CACHE_FLAG"
+	}
+}
 
 // HasDbConst DbName 是否为固定字符串（需要生成 DBNAME 常量）
 func (m *RedisHash) HasDbConst() bool {
