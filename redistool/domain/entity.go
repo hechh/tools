@@ -80,40 +80,40 @@ func (m *RedisString) CacheFlag() string {
 	if m.UseCache {
 		switch m.DbType {
 		case DbTypeGlobal:
-			return "define.GLOBAL_CACHE_FLAG"
+			return "redispool.GLOBAL_FLAG"
 		case DbTypeShards:
-			return "define.SHARDS_CACHE_FLAG"
+			return "redispool.SHARDS_FLAG"
 		default:
-			return "define.GLOBAL_CACHE_FLAG"
+			return "redispool.GLOBAL_FLAG"
 		}
 	}
 	switch m.DbType {
 	case DbTypeGlobal:
-		return "define.TEMP_CAHCE_FLAG | define.GLOBAL_CACHE_FLAG"
+		return "redispool.TEMP_FLAG | redispool.GLOBAL_FLAG"
 	case DbTypeShards:
-		return "define.TEMP_CAHCE_FLAG | define.SHARDS_CACHE_FLAG"
+		return "redispool.TEMP_FLAG | redispool.SHARDS_FLAG"
 	default:
-		return "define.TEMP_CAHCE_FLAG | define.GLOBAL_CACHE_FLAG"
+		return "redispool.TEMP_FLAG | redispool.GLOBAL_FLAG"
 	}
 }
 func (m *RedisHash) CacheFlag() string {
 	if m.UseCache {
 		switch m.DbType {
 		case DbTypeGlobal:
-			return "define.GLOBAL_CACHE_FLAG"
+			return "redispool.GLOBAL_FLAG"
 		case DbTypeShards:
-			return "define.SHARDS_CACHE_FLAG"
+			return "redispool.SHARDS_FLAG"
 		default:
-			return "define.GLOBAL_CACHE_FLAG"
+			return "redispool.GLOBAL_FLAG"
 		}
 	}
 	switch m.DbType {
 	case DbTypeGlobal:
-		return "define.TEMP_CAHCE_FLAG | define.GLOBAL_CACHE_FLAG"
+		return "redispool.TEMP_FLAG | redispool.GLOBAL_FLAG"
 	case DbTypeShards:
-		return "define.TEMP_CAHCE_FLAG | define.SHARDS_CACHE_FLAG"
+		return "redispool.TEMP_FLAG | redispool.SHARDS_FLAG"
 	default:
-		return "define.TEMP_CAHCE_FLAG | define.GLOBAL_CACHE_FLAG"
+		return "redispool.TEMP_FLAG | redispool.GLOBAL_FLAG"
 	}
 }
 
@@ -153,6 +153,57 @@ func (m *RedisString) ClientCallExpr() string {
 		return fmt.Sprintf(`redispool.GetByUid(%s)`, m.ShardField.Name)
 	default:
 		return fmt.Sprintf(`redispool.GetByName("%s")`, m.DbName)
+	}
+}
+
+// ClientFuncRef 返回客户端函数引用（用于 NewDataType），不含调用参数
+func (m *RedisString) ClientFuncRef() string {
+	switch m.DbType {
+	case DbTypeGlobal:
+		return `redispool.GetByName`
+	case DbTypeShards:
+		return `redispool.GetByUid`
+	default:
+		return `redispool.GetByName`
+	}
+}
+
+// DataTypeFlags 返回 DataType 的标志位表达式
+func (m *RedisString) DataTypeFlags() string {
+	flags := `redispool.STRING_FLAG`
+	switch m.DbType {
+	case DbTypeGlobal:
+		flags += ` | redispool.GLOBAL_FLAG`
+	case DbTypeShards:
+		flags += ` | redispool.SHARDS_FLAG`
+	}
+	flags += ` | redispool.PERMANENT_FLAG`
+	return flags
+}
+
+// ClientArg 返回 DataType.GetClient() 的调用参数（有分片字段则用字段名，否则用 DBNAME 常量）
+func (m *RedisString) ClientArg() string {
+	if m.ShardField != nil {
+		return m.ShardField.Name
+	}
+	return `DBNAME`
+}
+
+// ShardType 返回 DataType 泛型参数 I 的 Go 类型
+func (m *RedisString) ShardType() string {
+	switch m.DbType {
+	case DbTypeGlobal:
+		if m.ShardField != nil {
+			return m.ShardField.Type
+		}
+		return `string`
+	case DbTypeShards:
+		if m.ShardField != nil {
+			return m.ShardField.Type
+		}
+		return `uint64`
+	default:
+		return `string`
 	}
 }
 
@@ -237,6 +288,57 @@ func (m *RedisHash) ClientCallExpr() string {
 		return fmt.Sprintf(`redispool.GetByUid(%s)`, m.ShardField.Name)
 	default:
 		return fmt.Sprintf(`redispool.GetByName("%s")`, m.DbName)
+	}
+}
+
+// ClientFuncRef 返回客户端函数引用（用于 NewDataType），不含调用参数
+func (m *RedisHash) ClientFuncRef() string {
+	switch m.DbType {
+	case DbTypeGlobal:
+		return `redispool.GetByName`
+	case DbTypeShards:
+		return `redispool.GetByUid`
+	default:
+		return `redispool.GetByName`
+	}
+}
+
+// DataTypeFlags 返回 DataType 的标志位表达式
+func (m *RedisHash) DataTypeFlags() string {
+	flags := `redispool.HASH_FLAG`
+	switch m.DbType {
+	case DbTypeGlobal:
+		flags += ` | redispool.GLOBAL_FLAG`
+	case DbTypeShards:
+		flags += ` | redispool.SHARDS_FLAG`
+	}
+	flags += ` | redispool.PERMANENT_FLAG`
+	return flags
+}
+
+// ClientArg 返回 DataType.GetClient() 的调用参数（有分片字段则用字段名，否则用 DBNAME 常量）
+func (m *RedisHash) ClientArg() string {
+	if m.ShardField != nil {
+		return m.ShardField.Name
+	}
+	return `DBNAME`
+}
+
+// ShardType 返回 DataType 泛型参数 I 的 Go 类型
+func (m *RedisHash) ShardType() string {
+	switch m.DbType {
+	case DbTypeGlobal:
+		if m.ShardField != nil {
+			return m.ShardField.Type
+		}
+		return `string`
+	case DbTypeShards:
+		if m.ShardField != nil {
+			return m.ShardField.Type
+		}
+		return `uint64`
+	default:
+		return `string`
 	}
 }
 

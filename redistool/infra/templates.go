@@ -20,13 +20,24 @@ import (
 	"time"
 
 	"github.com/hechh/framework/define"
+	"github.com/hechh/library/base/logic"
+	"github.com/hechh/library/base/safe"
 	"github.com/hechh/library/redispool"
+	"github.com/hechh/library/redispool/datatype"
 )
 {{if .HasDbConst}}
 const DBNAME = "{{.DbName}}"
-{{end}}`
+{{end}}
+var DataType = datatype.NewDataType[pb.{{.Name}}](
+	{{.ClientFuncRef}},
+	{{.DataTypeFlags}},
+)`
 
 const StringMethods = `
+
+func ST({{GetArgs .Keys}}) redispool.IString {
+	return datatype.S{{fieldCount .Keys}}(DataType, GetKey, {{.ClientArg}}{{if .Keys}}, {{GetValues .Keys}}{{end}})
+}
 
 func GetKey({{GetArgs .Keys}}) string {
 {{- if .Keys}}
@@ -37,40 +48,39 @@ func GetKey({{GetArgs .Keys}}) string {
 }
 
 func Get({{GetArgs .Keys}}) (*pb.{{.Name}}, bool, error) {
-	key := GetKey({{.GetKeyCallArgs}})
-	client := {{.ClientCallExpr}}
+	client := DataType.GetClient({{.ClientArg}})
 	if client == nil {
 		return nil, false, fmt.Errorf("{{.DbErrorHint}}数据库不存在")
 	}
+	key := GetKey({{.GetKeyCallArgs}})
 	body, err := client.Get(key)
 	if err != nil {
 		return nil, false, err
 	}
-	if len(body) <= 0 {
-		return new(pb.{{.Name}}), true, nil
-	}
 	item := &pb.{{.Name}}{}
-	if err := item.UnmarshalVT([]byte(body)); err != nil {
-		return nil, false, err
+	if len(body) > 0 {
+		if err := item.UnmarshalVT(safe.StringToBytes(body)); err != nil {
+			return nil, false, err
+		}
 	}
-	return item, false, nil
+	return item, len(body) <= 0, nil
 }
 
 func Set({{GetArgs .Keys}}, val *pb.{{.Name}}, expiration time.Duration) error {
-	key := GetKey({{.GetKeyCallArgs}})
-	client := {{.ClientCallExpr}}
+	client := DataType.GetClient({{.ClientArg}})
 	if client == nil {
 		return fmt.Errorf("{{.DbErrorHint}}数据库不存在")
 	}
+	key := GetKey({{.GetKeyCallArgs}})
 	buf, err := val.MarshalVT()
 	if err != nil {
 		return err
 	}
-	return client.Set(key, string(buf), expiration)
+	return client.Set(key, safe.BytesToString(buf), expiration)
 }
 
 func Del({{GetArgs .Keys}}) error {
-	client := {{.ClientCallExpr}}
+	client := DataType.GetClient({{.ClientArg}})
 	if client == nil {
 		return fmt.Errorf("{{.DbErrorHint}}数据库不存在")
 	}
@@ -123,15 +133,26 @@ import (
 	"richgame/common/pb"
 
 	"github.com/hechh/framework/define"
+	"github.com/hechh/library/base/logic"
+	"github.com/hechh/library/base/safe"
 	"github.com/hechh/library/redispool"
+	"github.com/hechh/library/redispool/datatype"
 )
 {{if .HasDbConst}}
 const DBNAME = "{{.DbName}}"
 {{end}}{{if not .Keys}}
 const KEY = "{{.KeyFmt}}"
-{{end}}`
+{{end}}
+var DataType = datatype.NewDataType[pb.{{.Name}}](
+	{{.ClientFuncRef}},
+	{{.DataTypeFlags}},
+)`
 
 const HashMethods = `
+func HT({{GetArgs .GetHashFuncExtraParams}}) redispool.IHash {
+	return datatype.H{{fieldCount .Fields}}(DataType, {{if .Keys}}GetKey({{.GetKeyCallArgs}}){{else}}KEY{{end}}, GetField, {{.ClientArg}}{{if .Fields}}, {{GetValues .Fields}}{{end}})
+}
+
 {{- if .Keys}}
 func GetKey({{GetArgs .Keys}}) string {
 	return fmt.Sprintf("{{.KeyFmt}}", {{.GetKeyFmtArgs}})
@@ -153,7 +174,7 @@ func HGet({{GetArgs .GetHashFuncExtraParams}}) (*pb.{{.Name}}, bool, error) {
 	key := KEY
 	{{- end}}
 	field := GetField({{.GetFieldCallArgs}})
-	client := {{.ClientCallExpr}}
+	client := DataType.GetClient({{.ClientArg}})
 	if client == nil {
 		return nil, false, fmt.Errorf("{{.DbErrorHint}}数据库不存在")
 	}
@@ -161,14 +182,13 @@ func HGet({{GetArgs .GetHashFuncExtraParams}}) (*pb.{{.Name}}, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	if len(body) <= 0 {
-		return new(pb.{{.Name}}), true, nil
-	}
 	item := &pb.{{.Name}}{}
-	if err := item.UnmarshalVT([]byte(body)); err != nil {
-		return nil, false, err
+	if len(body) > 0 {
+		if err := item.UnmarshalVT(safe.StringToBytes(body)); err != nil {
+			return nil, false, err
+		}
 	}
-	return item, false, nil
+	return item, len(body) <= 0, nil
 }
 
 func HSet({{GetArgs .GetHashFuncExtraParams}}, val *pb.{{.Name}}) error {
@@ -178,7 +198,7 @@ func HSet({{GetArgs .GetHashFuncExtraParams}}, val *pb.{{.Name}}) error {
 	key := KEY
 	{{- end}}
 	field := GetField({{.GetFieldCallArgs}})
-	client := {{.ClientCallExpr}}
+	client := DataType.GetClient({{.ClientArg}})
 	if client == nil {
 		return fmt.Errorf("{{.DbErrorHint}}数据库不存在")
 	}
@@ -186,11 +206,11 @@ func HSet({{GetArgs .GetHashFuncExtraParams}}, val *pb.{{.Name}}) error {
 	if err != nil {
 		return err
 	}
-	return client.HSet(key, field, string(buf))
+	return client.HSet(key, field, safe.BytesToString(buf))
 }
 
 func HDel({{GetArgs .GetHashFuncExtraParams}}) error {
-	client := {{.ClientCallExpr}}
+	client := DataType.GetClient({{.ClientArg}})
 	if client == nil {
 		return fmt.Errorf("{{.DbErrorHint}}数据库不存在")
 	}
@@ -205,7 +225,7 @@ func HDel({{GetArgs .GetHashFuncExtraParams}}) error {
 }
 
 func HLen({{GetArgs .Keys}}) (int64, error) {
-	client := {{.ClientCallExpr}}
+	client := DataType.GetClient({{.ClientArg}})
 	if client == nil {
 		return 0, fmt.Errorf("{{.DbErrorHint}}数据库不存在")
 	}
@@ -281,6 +301,7 @@ var TemplateFuncMap = template.FuncMap{
 	"ShardArgDecl":     templateShardArgDecl,
 	"NotUidArgs":       templateNotUidArgs,
 	"CtxCallArgs":      templateCtxCallArgs,
+	"fieldCount":       templateFieldCount,
 }
 
 // BuildStringTemplate 构建String类型的Go代码模板
@@ -472,4 +493,13 @@ func templateCtxCallArgs(fields ...[]*domain.Field) string {
 		}
 	}
 	return strings.Join(args, ",")
+}
+
+// templateFieldCount 返回字段列表长度，用于模板中动态选择 S0~S3 / H0~H3
+func templateFieldCount(fields ...[]*domain.Field) int {
+	n := 0
+	for _, list := range fields {
+		n += len(list)
+	}
+	return n
 }
