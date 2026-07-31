@@ -224,6 +224,59 @@ func HDel({{GetArgs .GetHashFuncExtraParams}}) error {
 	return err
 }
 
+func HMGet({{if HasAnyFields .GetHashKeyParams}}{{GetArgs .GetHashKeyParams}}, {{end}}fields ...string) (map[string]*pb.{{.Name}}, error) {
+	client := DataType.GetClient({{.ClientArg}})
+	if client == nil {
+		return nil, fmt.Errorf("{{.DbErrorHint}}数据库不存在")
+	}
+	{{- if .Keys}}
+	key := GetKey({{.GetKeyCallArgs}})
+	{{- else}}
+	key := KEY
+	{{- end}}
+	vals, err := client.HMGet(key, fields...)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]*pb.{{.Name}}, len(fields))
+	for i, field := range fields {
+		if i >= len(vals) || vals[i] == nil {
+			continue
+		}
+		body, ok := vals[i].(string)
+		if !ok || len(body) == 0 {
+			continue
+		}
+		item := &pb.{{.Name}}{}
+		if err := item.UnmarshalVT(safe.StringToBytes(body)); err != nil {
+			return nil, err
+		}
+		result[field] = item
+	}
+	return result, nil
+}
+
+func HMSet({{if HasAnyFields .GetHashKeyParams}}{{GetArgs .GetHashKeyParams}}, {{end}}data map[string]*pb.{{.Name}}) error {
+	client := DataType.GetClient({{.ClientArg}})
+	if client == nil {
+		return fmt.Errorf("{{.DbErrorHint}}数据库不存在")
+	}
+	{{- if .Keys}}
+	key := GetKey({{.GetKeyCallArgs}})
+	{{- else}}
+	key := KEY
+	{{- end}}
+	args := make([]any, 0, len(data)*2)
+	for field, val := range data {
+		buf, err := val.MarshalVT()
+		if err != nil {
+			return err
+		}
+		args = append(args, field, safe.BytesToString(buf))
+	}
+	return client.HMSet(key, args...)
+}
+
 func HLen({{GetArgs .Keys}}) (int64, error) {
 	client := DataType.GetClient({{.ClientArg}})
 	if client == nil {

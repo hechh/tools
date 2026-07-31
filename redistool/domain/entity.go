@@ -384,6 +384,21 @@ func (m *RedisHash) GetHashFuncExtraParams() []*Field {
 	return result
 }
 
+// GetHashKeyParams 返回 HMGet/HMSet 签名中的参数列表（shard + keys，不含 fields，去重）
+func (m *RedisHash) GetHashKeyParams() []*Field {
+	var result []*Field
+	sf := m.ShardField
+	if sf != nil {
+		result = append(result, sf)
+	}
+	for _, f := range m.Keys {
+		if sf == nil || !strings.EqualFold(sf.Name, f.Name) {
+			result = append(result, f)
+		}
+	}
+	return result
+}
+
 // IsShardKeySame 判断分片字段是否与Key参数同名（模板用，避免重复输出参数）
 func (m *RedisString) IsShardKeySame() bool {
 	if m.ShardField == nil || len(m.Keys) == 0 {
