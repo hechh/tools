@@ -35,7 +35,7 @@ var DataType = datatype.NewDataType[pb.{{.Name}}](
 
 const StringMethods = `
 
-func ST({{GetArgs .Keys}}) redispool.IString {
+func ST({{GetArgs .Keys}}) redispool.IData {
 	return datatype.S{{fieldCount .Keys}}(DataType, GetKey, {{.ClientArg}}{{if .Keys}}, {{GetValues .Keys}}{{end}})
 }
 
@@ -149,7 +149,7 @@ var DataType = datatype.NewDataType[pb.{{.Name}}](
 )`
 
 const HashMethods = `
-func HT({{GetArgs .GetHashFuncExtraParams}}) redispool.IHash {
+func HT({{GetArgs .GetHashFuncExtraParams}}) redispool.IData {
 	return datatype.H{{fieldCount .Fields}}(DataType, {{if .Keys}}GetKey({{.GetKeyCallArgs}}){{else}}KEY{{end}}, GetField, {{.ClientArg}}{{if .Fields}}, {{GetValues .Fields}}{{end}})
 }
 
