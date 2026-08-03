@@ -89,17 +89,17 @@ func Del({{GetArgs .Keys}}) error {
 	return err
 }
 
-func GetByCache(ctx define.IContext{{if NotUidArgs .Keys}}, {{NotUidArgs .Keys}}{{end}}) (*pb.{{.Name}}, bool, error) {
+func GetByCache(ctx define.IContext{{if NotUidArgs .Keys}}, {{NotUidArgs .Keys}}{{end}}) (*pb.{{.Name}}, error) {
 	key := GetKey({{CtxCallArgs .Keys}})
 	if obj, ok := ctx.GetCache(key); ok {
-		return obj.(*pb.{{.Name}}), false, nil
+		return obj.(*pb.{{.Name}}), nil
 	}
-	item, isNew, err := Get({{CtxCallArgs .Keys}})
+	item, _, err := Get({{CtxCallArgs .Keys}})
 	if err != nil {
-		return item, isNew, err
+		return item, err
 	}
 	ctx.SetCache(key, item, {{.CacheFlag}})
-	return item, isNew, nil
+	return item, nil
 }
 
 func Change(ctx define.IContext{{if NotUidArgs .Keys}}, {{NotUidArgs .Keys}}{{end}}) {
