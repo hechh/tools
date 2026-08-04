@@ -31,6 +31,7 @@ func V({{GetArgs .Keys}}) *redispool.Value {
 	return redispool.NewValue(
 		{{.ClientCallExpr}},
 		new(pb.{{.Name}}),
+		redispool.STRING,
 		GetKey({{.GetKeyCallArgs}}),
 	)
 }
@@ -39,6 +40,7 @@ func V1({{GetArgs .Keys}}, val *pb.{{.Name}}) *redispool.Value {
 	return redispool.NewValue(
 		{{.ClientCallExpr}},
 		val,
+		redispool.STRING,
 		GetKey({{.GetKeyCallArgs}}),
 	)
 }`
@@ -154,6 +156,7 @@ func HV({{GetArgs .GetHashFuncExtraParams}}) *redispool.Value {
 	return redispool.NewValue(
 		{{.ClientCallExpr}},
 		new(pb.{{.Name}}),
+		redispool.HASH,
 		{{if .Keys}}GetKey({{.GetKeyCallArgs}}){{else}}KEY{{end}},
 		GetField({{.GetFieldCallArgs}}),
 	)
@@ -163,6 +166,7 @@ func HV1({{GetArgs .GetHashFuncExtraParams}}, val *pb.{{.Name}}) *redispool.Valu
 	return redispool.NewValue(
 		{{.ClientCallExpr}},
 		val,
+		redispool.HASH,
 		{{if .Keys}}GetKey({{.GetKeyCallArgs}}){{else}}KEY{{end}},
 		GetField({{.GetFieldCallArgs}}),
 	)
