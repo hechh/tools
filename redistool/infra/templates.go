@@ -10,7 +10,7 @@ import (
 
 const StringTemplStr = `/*
 * 本代码由redistool工具生成，请勿手动修改
-*/
+ */
 
 package {{.Pkg}}
 
@@ -20,24 +20,30 @@ import (
 	"time"
 
 	"github.com/hechh/framework/define"
-	"github.com/hechh/library/base/logic"
 	"github.com/hechh/library/base/safe"
 	"github.com/hechh/library/redispool"
-	"github.com/hechh/library/redispool/datatype"
 )
 {{if .HasDbConst}}
 const DBNAME = "{{.DbName}}"
 {{end}}
-var DataType = datatype.NewDataType[pb.{{.Name}}](
-	{{.ClientFuncRef}},
-	{{.DataTypeFlags}},
-)`
+
+func V({{GetArgs .Keys}}) *redispool.Value {
+	return redispool.NewValue(
+		{{.ClientCallExpr}},
+		new(pb.{{.Name}}),
+		GetKey({{.GetKeyCallArgs}}),
+	)
+}
+
+func V1({{GetArgs .Keys}}, val *pb.{{.Name}}) *redispool.Value {
+	return redispool.NewValue(
+		{{.ClientCallExpr}},
+		val,
+		GetKey({{.GetKeyCallArgs}}),
+	)
+}`
 
 const StringMethods = `
-
-func ST({{GetArgs .Keys}}) redispool.IData {
-	return datatype.S{{fieldCount .Keys}}(DataType, GetKey, {{.ClientArg}}{{if .Keys}}, {{GetValues .Keys}}{{end}})
-}
 
 func GetKey({{GetArgs .Keys}}) string {
 {{- if .Keys}}
@@ -48,7 +54,7 @@ func GetKey({{GetArgs .Keys}}) string {
 }
 
 func Get({{GetArgs .Keys}}) (*pb.{{.Name}}, bool, error) {
-	client := DataType.GetClient({{.ClientArg}})
+	client := {{.ClientCallExpr}}
 	if client == nil {
 		return nil, false, fmt.Errorf("{{.DbErrorHint}}数据库不存在")
 	}
@@ -67,7 +73,7 @@ func Get({{GetArgs .Keys}}) (*pb.{{.Name}}, bool, error) {
 }
 
 func Set({{GetArgs .Keys}}, val *pb.{{.Name}}, expiration time.Duration) error {
-	client := DataType.GetClient({{.ClientArg}})
+	client := {{.ClientCallExpr}}
 	if client == nil {
 		return fmt.Errorf("{{.DbErrorHint}}数据库不存在")
 	}
@@ -80,7 +86,7 @@ func Set({{GetArgs .Keys}}, val *pb.{{.Name}}, expiration time.Duration) error {
 }
 
 func Del({{GetArgs .Keys}}) error {
-	client := DataType.GetClient({{.ClientArg}})
+	client := {{.ClientCallExpr}}
 	if client == nil {
 		return fmt.Errorf("{{.DbErrorHint}}数据库不存在")
 	}
@@ -90,41 +96,43 @@ func Del({{GetArgs .Keys}}) error {
 }
 
 func GetByCache(ctx define.IContext{{if NotUidArgs .Keys}}, {{NotUidArgs .Keys}}{{end}}) (*pb.{{.Name}}, error) {
-	key := GetKey({{CtxCallArgs .Keys}})
-	if obj, ok := ctx.GetCache(key); ok {
-		return obj.(*pb.{{.Name}}), nil
+{{- if HasUidField .Keys}}
+	uid := ctx.GetUid()
+{{- end}}
+	key := GetKey({{LocalCallArgs .Keys}})
+	if obj := ctx.GetCache(key); obj != nil {
+		return obj.Get().(*pb.{{.Name}}), nil
 	}
-	item, _, err := Get({{CtxCallArgs .Keys}})
+
+	item, _, err := Get({{LocalCallArgs .Keys}})
 	if err != nil {
-		return item, err
+		return nil, err
 	}
-	ctx.SetCache(key, item, {{.CacheFlag}})
+
+	val := V1({{LocalCallArgs .Keys}}, item)
+	ctx.SetCache(key, val)
 	return item, nil
+}
+
+func Read(ctx define.IContext{{if NotUidArgs .Keys}}, {{NotUidArgs .Keys}}{{end}}) *pb.{{.Name}} {
+	if obj := ctx.GetCache(GetKey({{CtxCallArgs .Keys}})); obj != nil {
+		return obj.Get().(*pb.{{.Name}})
+	}
+	return nil
 }
 
 func Change(ctx define.IContext{{if NotUidArgs .Keys}}, {{NotUidArgs .Keys}}{{end}}) {
 	ctx.Change(GetKey({{CtxCallArgs .Keys}}))
 }
 
-func Read(ctx define.IContext{{if NotUidArgs .Keys}}, {{NotUidArgs .Keys}}{{end}}) *pb.{{.Name}} {
-	if obj, ok := ctx.GetCache(GetKey({{CtxCallArgs .Keys}})); ok {
-		return obj.(*pb.{{.Name}})
-	}
-	return nil
-}
-
 func IsChanged(ctx define.IContext{{if NotUidArgs .Keys}}, {{NotUidArgs .Keys}}{{end}}) bool {
 	return ctx.IsChanged(GetKey({{CtxCallArgs .Keys}}))
-}
-
-func Reset(ctx define.IContext{{if NotUidArgs .Keys}}, {{NotUidArgs .Keys}}{{end}}) {
-	ctx.Reset(GetKey({{CtxCallArgs .Keys}}))
 }
 `
 
 const HashTemplStr = `/*
 * 本代码由redistool工具生成，请勿手动修改
-*/
+ */
 
 package {{.Pkg}}
 
@@ -133,26 +141,34 @@ import (
 	"richgame/common/pb"
 
 	"github.com/hechh/framework/define"
-	"github.com/hechh/library/base/logic"
 	"github.com/hechh/library/base/safe"
 	"github.com/hechh/library/redispool"
-	"github.com/hechh/library/redispool/datatype"
 )
 {{if .HasDbConst}}
 const DBNAME = "{{.DbName}}"
 {{end}}{{if not .Keys}}
 const KEY = "{{.KeyFmt}}"
 {{end}}
-var DataType = datatype.NewDataType[pb.{{.Name}}](
-	{{.ClientFuncRef}},
-	{{.DataTypeFlags}},
-)`
 
-const HashMethods = `
-func HT({{GetArgs .GetHashFuncExtraParams}}) redispool.IData {
-	return datatype.H{{fieldCount .Fields}}(DataType, {{if .Keys}}GetKey({{.GetKeyCallArgs}}){{else}}KEY{{end}}, GetField, {{.ClientArg}}{{if .Fields}}, {{GetValues .Fields}}{{end}})
+func HV({{GetArgs .GetHashFuncExtraParams}}) *redispool.Value {
+	return redispool.NewValue(
+		{{.ClientCallExpr}},
+		new(pb.{{.Name}}),
+		{{if .Keys}}GetKey({{.GetKeyCallArgs}}){{else}}KEY{{end}},
+		GetField({{.GetFieldCallArgs}}),
+	)
 }
 
+func HV1({{GetArgs .GetHashFuncExtraParams}}, val *pb.{{.Name}}) *redispool.Value {
+	return redispool.NewValue(
+		{{.ClientCallExpr}},
+		val,
+		{{if .Keys}}GetKey({{.GetKeyCallArgs}}){{else}}KEY{{end}},
+		GetField({{.GetFieldCallArgs}}),
+	)
+}`
+
+const HashMethods = `
 {{- if .Keys}}
 func GetKey({{GetArgs .Keys}}) string {
 	return fmt.Sprintf("{{.KeyFmt}}", {{.GetKeyFmtArgs}})
@@ -174,7 +190,7 @@ func HGet({{GetArgs .GetHashFuncExtraParams}}) (*pb.{{.Name}}, bool, error) {
 	key := KEY
 	{{- end}}
 	field := GetField({{.GetFieldCallArgs}})
-	client := DataType.GetClient({{.ClientArg}})
+	client := {{.ClientCallExpr}}
 	if client == nil {
 		return nil, false, fmt.Errorf("{{.DbErrorHint}}数据库不存在")
 	}
@@ -198,7 +214,7 @@ func HSet({{GetArgs .GetHashFuncExtraParams}}, val *pb.{{.Name}}) error {
 	key := KEY
 	{{- end}}
 	field := GetField({{.GetFieldCallArgs}})
-	client := DataType.GetClient({{.ClientArg}})
+	client := {{.ClientCallExpr}}
 	if client == nil {
 		return fmt.Errorf("{{.DbErrorHint}}数据库不存在")
 	}
@@ -210,7 +226,7 @@ func HSet({{GetArgs .GetHashFuncExtraParams}}, val *pb.{{.Name}}) error {
 }
 
 func HDel({{GetArgs .GetHashFuncExtraParams}}) error {
-	client := DataType.GetClient({{.ClientArg}})
+	client := {{.ClientCallExpr}}
 	if client == nil {
 		return fmt.Errorf("{{.DbErrorHint}}数据库不存在")
 	}
@@ -225,7 +241,7 @@ func HDel({{GetArgs .GetHashFuncExtraParams}}) error {
 }
 
 func HMGet({{if HasAnyFields .GetHashKeyParams}}{{GetArgs .GetHashKeyParams}}, {{end}}fields ...string) (map[string]*pb.{{.Name}}, error) {
-	client := DataType.GetClient({{.ClientArg}})
+	client := {{.ClientCallExpr}}
 	if client == nil {
 		return nil, fmt.Errorf("{{.DbErrorHint}}数据库不存在")
 	}
@@ -239,25 +255,28 @@ func HMGet({{if HasAnyFields .GetHashKeyParams}}{{GetArgs .GetHashKeyParams}}, {
 		return nil, err
 	}
 	result := make(map[string]*pb.{{.Name}}, len(fields))
-	for i, field := range fields {
-		if i >= len(vals) || vals[i] == nil {
-			continue
-		}
-		body, ok := vals[i].(string)
-		if !ok || len(body) == 0 {
-			continue
+	for i, value := range vals {
+		var body []byte
+		switch vv := value.(type) {
+		case []byte:
+			body = vv
+		case string:	
+			body = safe.StringToBytes(vv)
 		}
 		item := &pb.{{.Name}}{}
-		if err := item.UnmarshalVT(safe.StringToBytes(body)); err != nil {
-			return nil, err
+		if len(body) > 0 {
+			if reterr := item.UnmarshalVT(body); reterr != nil {
+				err = reterr
+				continue
+			}
 		}
-		result[field] = item
+		result[fields[i]] = item
 	}
 	return result, nil
 }
 
 func HMSet({{if HasAnyFields .GetHashKeyParams}}{{GetArgs .GetHashKeyParams}}, {{end}}data map[string]*pb.{{.Name}}) error {
-	client := DataType.GetClient({{.ClientArg}})
+	client := {{.ClientCallExpr}}
 	if client == nil {
 		return fmt.Errorf("{{.DbErrorHint}}数据库不存在")
 	}
@@ -278,30 +297,36 @@ func HMSet({{if HasAnyFields .GetHashKeyParams}}{{GetArgs .GetHashKeyParams}}, {
 }
 
 func HLen({{GetArgs .Keys}}) (int64, error) {
-	client := DataType.GetClient({{.ClientArg}})
+	client := {{.ClientCallExpr}}
 	if client == nil {
 		return 0, fmt.Errorf("{{.DbErrorHint}}数据库不存在")
 	}
 	return client.HLen({{if .Keys}}GetKey({{.GetKeyCallArgs}}){{else}}KEY{{end}})
 }
 
-func HGetByCache(ctx define.IContext{{if NotUidArgs .GetHashFuncExtraParams}}, {{NotUidArgs .GetHashFuncExtraParams}}{{end}}) (*pb.{{.Name}}, bool, error) {
+func HGetByCache(ctx define.IContext{{if NotUidArgs .GetHashFuncExtraParams}}, {{NotUidArgs .GetHashFuncExtraParams}}{{end}}) (*pb.{{.Name}}, error) {
+{{- if HasUidField .GetHashFuncExtraParams}}
+	uid := ctx.GetUid()
+{{- end}}
 	{{- if .Keys}}
-	key := GetKey({{CtxCallArgs .Keys}})
+	key := GetKey({{LocalCallArgs .Keys}})
 	{{- else}}
 	key := KEY
 	{{- end}}
-	field := GetField({{CtxCallArgs .Fields}})
+	field := GetField({{LocalCallArgs .Fields}})
 	cacheKey := key + field
-	if obj, ok := ctx.GetCache(cacheKey); ok {
-		return obj.(*pb.{{.Name}}), false, nil
+	if obj := ctx.GetCache(cacheKey); obj != nil {
+		return obj.Get().(*pb.{{.Name}}), nil
 	}
-	item, isNew, err := HGet({{CtxCallArgs .GetHashFuncExtraParams}})
+
+	item, _, err := HGet({{LocalCallArgs .GetHashFuncExtraParams}})
 	if err != nil {
-		return item, isNew, err
+		return nil, err
 	}
-	ctx.SetCache(cacheKey, item, {{.CacheFlag}})
-	return item, isNew, nil
+
+	val := HV1({{LocalCallArgs .GetHashFuncExtraParams}}, item)
+	ctx.SetCache(cacheKey, val)
+	return item, nil
 }
 
 func Change(ctx define.IContext{{if NotUidArgs .GetHashFuncExtraParams}}, {{NotUidArgs .GetHashFuncExtraParams}}{{end}}) {
@@ -318,8 +343,8 @@ func Read(ctx define.IContext{{if NotUidArgs .GetHashFuncExtraParams}}, {{NotUid
 	{{- else}}
 	cacheKey := KEY + GetField({{CtxCallArgs .Fields}})
 	{{- end}}
-	if obj, ok := ctx.GetCache(cacheKey); ok {
-		return obj.(*pb.{{.Name}})
+	if obj := ctx.GetCache(cacheKey); obj != nil {
+		return obj.Get().(*pb.{{.Name}})
 	}
 	return nil
 }
@@ -329,14 +354,6 @@ func IsChanged(ctx define.IContext{{if NotUidArgs .GetHashFuncExtraParams}}, {{N
 	return ctx.IsChanged(GetKey({{CtxCallArgs .Keys}}) + GetField({{CtxCallArgs .Fields}}))
 	{{- else}}
 	return ctx.IsChanged(KEY + GetField({{CtxCallArgs .Fields}}))
-	{{- end}}
-}
-
-func Reset(ctx define.IContext{{if NotUidArgs .GetHashFuncExtraParams}}, {{NotUidArgs .GetHashFuncExtraParams}}{{end}}) {
-	{{- if .Keys}}
-	ctx.Reset(GetKey({{CtxCallArgs .Keys}}) + GetField({{CtxCallArgs .Fields}}))
-	{{- else}}
-	ctx.Reset(KEY + GetField({{CtxCallArgs .Fields}}))
 	{{- end}}
 }
 `
@@ -354,6 +371,8 @@ var TemplateFuncMap = template.FuncMap{
 	"ShardArgDecl":     templateShardArgDecl,
 	"NotUidArgs":       templateNotUidArgs,
 	"CtxCallArgs":      templateCtxCallArgs,
+	"LocalCallArgs":    templateLocalCallArgs,
+	"HasUidField":      templateHasUidField,
 	"fieldCount":       templateFieldCount,
 }
 
@@ -546,6 +565,35 @@ func templateCtxCallArgs(fields ...[]*domain.Field) string {
 		}
 	}
 	return strings.Join(args, ",")
+}
+
+// templateLocalCallArgs 生成 GetByCache/HGetByCache 函数体内的调用参数列表
+// uid 字段替换为局部变量 uid（由 uid := ctx.GetUid() 定义），其余字段保持参数名
+func templateLocalCallArgs(fields ...[]*domain.Field) string {
+	var args []string
+	for _, list := range fields {
+		for _, f := range list {
+			if strings.EqualFold(f.Name, "uid") {
+				args = append(args, "uid")
+			} else {
+				args = append(args, f.Name)
+			}
+		}
+	}
+	return strings.Join(args, ",")
+}
+
+// templateHasUidField 判断字段列表中是否包含名为 uid 的字段
+// 用于 :cache 函数中决定是否生成 uid := ctx.GetUid() 局部变量
+func templateHasUidField(fields ...[]*domain.Field) bool {
+	for _, list := range fields {
+		for _, f := range list {
+			if strings.EqualFold(f.Name, "uid") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // templateFieldCount 返回字段列表长度，用于模板中动态选择 S0~S3 / H0~H3
