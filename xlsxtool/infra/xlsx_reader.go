@@ -63,29 +63,29 @@ func readFile(filename string) ([]*domain.Table, error) {
 					Sheet: vals[1], Rows: sheetRows, Token: 1,
 				})
 			case strings.HasPrefix(strings.ToLower(str), "@struct|"):
-				pos := strings.Index(vals[1], "@")
-				if pos < 0 {
-					continue
+				sheet, typ := vals[1], vals[1]
+				if pos := strings.Index(vals[1], "@"); pos >= 0 {
+					sheet, typ = vals[1][:pos], vals[1][pos+1:]
 				}
-				sheetRows, err := fp.GetRows(vals[1][:pos])
+				sheetRows, err := fp.GetRows(sheet)
 				if err != nil {
 					return nil, err
 				}
 				tables = append(tables, &domain.Table{
-					Sheet: vals[1][:pos], Type: vals[1][pos+1:],
+					Sheet: sheet, Type: typ,
 					Rules: vals[2:], Rows: sheetRows, Token: 2,
 				})
 			case strings.HasPrefix(strings.ToLower(str), "@struct:col|"):
-				pos := strings.Index(vals[1], "@")
-				if pos < 0 {
-					continue
+				sheet, typ := vals[1], vals[1]
+				if pos := strings.Index(vals[1], "@"); pos >= 0 {
+					sheet, typ = vals[1][:pos], vals[1][pos+1:]
 				}
-				cols, err := fp.GetCols(vals[1][:pos])
+				cols, err := fp.GetCols(sheet)
 				if err != nil {
 					return nil, err
 				}
 				tables = append(tables, &domain.Table{
-					Sheet: vals[1][:pos], Type: vals[1][pos+1:],
+					Sheet: sheet, Type: typ,
 					Rules: vals[2:], Rows: cols, Token: 3,
 				})
 			}

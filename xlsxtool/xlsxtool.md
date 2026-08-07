@@ -31,6 +31,8 @@ make xlsx2code   → ④ 生成 .gen.go 查询代码
 
 `Sheet名@结构体名` 中，`@` 前是 Excel Sheet 名，`@` 后是 Proto message 名（PascalCase）。
 
+> **省略 `@结构体名`**：若 `@` 后省略（不写 `@`），则 Sheet 名同时作为结构体名（Proto message 名）。适用于 Sheet 名本身已是 PascalCase 的场景，例如 `@struct|ChainPackConfig|map:ActivityId` 等价于 `@struct|ChainPackConfig@ChainPackConfig|map:ActivityId`。
+
 ---
 
 ## 二、枚举定义
