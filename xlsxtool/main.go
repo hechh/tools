@@ -1,3 +1,4 @@
+// xlsxtool 是 Excel 配置表转 JSON 数据文件的生成工具，不依赖 .proto / .pb.go 编译链。
 package main
 
 import (
@@ -9,14 +10,14 @@ import (
 
 var rootCmd = &cobra.Command{
 	Use:   "xlsxtool",
-	Short: "Excel配置表 → Proto / 数据 / 查询代码一站式生成工具",
-	Long: "xlsxtool 是 Excel 配置表转 Proto 定义、.conf 数据文件、" +
-		"以及 Go 查询代码的一站式生成工具。",
+	Short: "Excel配置表 → JSON 数据文件生成工具",
+	Long: "xlsxtool 是 Excel 配置表转 JSON 数据文件的一站式生成工具，" +
+		"不依赖 .proto / .pb.go 编译链，JSON 结构与 protobuf message 同构，可倒回 pb 使用。",
 }
 
 func init() {
-	rootCmd.AddCommand(cmd.ProtoCmd)
 	rootCmd.AddCommand(cmd.DataCmd)
+	rootCmd.AddCommand(cmd.ProtoCmd)
 	rootCmd.AddCommand(cmd.CodeCmd)
 }
 

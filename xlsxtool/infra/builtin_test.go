@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hechh/tools/jsontool/domain"
+	"github.com/hechh/tools/xlsxtool/domain"
 )
 
 // TestConvertBasic 测试内置标量类型转换

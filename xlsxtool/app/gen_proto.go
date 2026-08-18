@@ -12,8 +12,10 @@ import (
 	"github.com/hechh/tools/xlsxtool/internal"
 )
 
-// GenProto proto生成用例
+// GenProto proto生成用例：enum.gen.proto + table.gen.proto
 func GenProto(ctx *domain.ParseContext, dstDir string, save func(string, string, []byte) error) error {
+	resolveEnumFlags(ctx)
+
 	// 生成 enum.gen.proto
 	if len(ctx.Enums) > 0 {
 		for _, item := range ctx.Enums {
@@ -74,4 +76,20 @@ func executeTemplate(name, text string, buf *bytes.Buffer, data any) error {
 		return err
 	}
 	return tpl.Execute(buf, data)
+}
+
+// resolveEnumFlags 用 @enum 表标记字段是否为枚举类型（替代 proto 描述符判断）
+func resolveEnumFlags(ctx *domain.ParseContext) {
+	ctx.WalkStruct(func(st *domain.Struct) bool {
+		for _, f := range st.FieldList {
+			typ := f.Type
+			if strings.HasPrefix(typ, "repeated ") {
+				typ = strings.TrimPrefix(typ, "repeated ")
+			}
+			if _, ok := ctx.EnumMap[typ]; ok {
+				f.IsEnum = true
+			}
+		}
+		return true
+	})
 }

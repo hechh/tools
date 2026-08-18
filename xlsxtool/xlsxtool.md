@@ -2,20 +2,29 @@
 
 ## 概述
 
-`xlsxtool` 是 Excel 配置表 → Proto / 数据 / 查询代码的一站式生成工具。每个 `.xlsx` 文件必须包含一个 **"生成表"** Sheet。
+`xlsxtool` 是 Excel 配置表 → JSON / Proto / 查询代码的一站式生成工具，是 `xlsxtool` 的**完整替代版**（data/proto/code 三命令），**data 命令不依赖 .proto / .pb.go 编译链**，输出 JSON 数据文件。JSON 结构与 protobuf message（`XxxConfigAry`）同构，运行时可用 `json.Unmarshal` / `sonic.Unmarshal` 直接倒回 pb 结构，走现有 gen.go 查询层。
+
+> 与 `xlsxtool` 的关系：xlsxtool 是 xlsxtool 的完整替代版（data/proto/code 三命令），唯一区别是 data 命令输出 JSON（无 proto 依赖）而非 `.conf`。验证无误后将删除 xlsxtool。
+
+## 命令（三个子命令）
 
 ```bash
-make xlsx2proto  → ① 生成 enum.gen.proto / table.gen.proto
-make pb          → ② 编译 proto → .pb.go
-make xlsx2data   → ③ 生成 .conf 数据文件
-make xlsx2code   → ④ 生成 .gen.go 查询代码
+xlsxtool data  -x <xlsx目录> -o <json输出目录>
+xlsxtool proto -x <xlsx目录> -o <proto输出目录>
+xlsxtool code  -x <xlsx目录> -o <代码输出目录>
 ```
 
-> 新增字段类型或枚举值必须从 ① 开始完整执行。
+| 命令 | 产物 | 说明 |
+|------|------|------|
+| `data` | `XxxConfig.json` | JSON 数据（无 proto 依赖，可倒回 pb） |
+| `proto` | `enum.gen.proto` + `table.gen.proto` | proto 定义（与 xlsxtool 输出内容一致） |
+| `code` | `common/table/<snake>/*.gen.go` | Go 查询代码（与 xlsxtool 输出一致） |
 
----
+> `proto` 命令会扫描输出目录中已有的 `.proto` 文件获取 package 信息与外部类型，因此应输出到已含旧 proto 的目录（如 `public/protocol`）。
 
-## 一、"生成表" Sheet 指令
+## "生成表" Sheet 指令
+
+与 xlsxtool 完全一致：
 
 ```
 @enum|Sheet名
@@ -23,196 +32,58 @@ make xlsx2code   → ④ 生成 .gen.go 查询代码
 @struct:col|Sheet名@结构体名|索引规则1|索引规则2...
 ```
 
-| 指令 | 用途 |
-|------|------|
-| `@enum` | 定义枚举 |
-| `@struct` | 行式配置表（字段名在首行） |
-| `@struct:col` | 列式配置表（字段名在首列） |
+- `@enum`：枚举定义（`E|查找键|枚举类型|Proto名称|数值` 5 段）
+- `@struct`：行式配置表（字段名在首行）
+- `@struct:col`：列式配置表（字段名在首列，每行一个字段）
+- 省略 `@结构体名` 时 Sheet 名即结构体名
+- 索引规则（map/group/range）由 `code` 命令消费构建容器
 
-`Sheet名@结构体名` 中，`@` 前是 Excel Sheet 名，`@` 后是 Proto message 名（PascalCase）。
+## JSON 结构规范
 
-> **省略 `@结构体名`**：若 `@` 后省略（不写 `@`），则 Sheet 名同时作为结构体名（Proto message 名）。适用于 Sheet 名本身已是 PascalCase 的场景，例如 `@struct|ChainPackConfig|map:ActivityId` 等价于 `@struct|ChainPackConfig@ChainPackConfig|map:ActivityId`。
-
----
-
-## 二、枚举定义
-
-### 2.1 格式
-
-在对应 Sheet 中每行一个枚举值，5 个管道分隔字段：
-
-```
-E|查找键|枚举类型|Proto名称|数值
-```
-
-| 位置 | 字段 | 说明 |
-|------|------|------|
-| 1 | `E` | 固定标识 |
-| 2 | 查找键 | **配置表数据中用来引用此枚举值的字符串**（`DescMap` 的 key） |
-| 3 | 枚举类型 | 枚举 Proto 类型名（PascalCase，如 `PropType`） |
-| 4 | Proto 名称 | 枚举值 Proto 名（全大写+下划线，如 `PT_Coin`） |
-| 5 | 数值 | 整数值 |
-
-### 2.2 示例
-
-```
-E|金币|PropType|PT_Coin|1
-E|钻石|PropType|PT_Diamond|2
-E|青铜|RoomType|RT_Bronze|1
-E|白银|RoomType|RT_Silver|2
+```json
+{
+  "Ary": [
+    {
+      "RoomId": 5001,
+      "MaxPlayers": 5,
+      "EntryFee": { "PropType": 1, "Incr": 50 },
+      "RewardList": [ { "PropType": 1, "Incr": 100 }, { "PropType": 2, "Incr": 200 } ],
+      "StartTime": 1772409600,
+      "Rate": [1, 2, 3]
+    }
+  ]
+}
 ```
 
-工具自动追加 `{EnumType}_None = 0` 作为默认值。一个 Sheet 可定义多种枚举类型，按枚举类型自动分组。
+- **键名 = Excel 第 1 行字段名原样（PascalCase）**：匹配 pb.go json tag（`json:"RoomId,omitempty"`），`json.Unmarshal`/`sonic.Unmarshal` 直接倒回 `*pb.XxxConfigAry`
+- **包装 `{"Ary":[...]}`**：与 `XxxConfigAry` 同构，可喂给 gen.go `parse(ary *pb.XxxConfigAry)`
+- **空字段省略键**：与 omitempty 语义一致，倒回时为零值
 
----
+## 类型系统
 
-## 三、结构体定义（配置表）
+| Excel 写法 | JSON 值 | 数据示例 |
+|-----------|---------|----------|
+| `int`/`int8`/`int16`/`int32` | 数字 | `123` |
+| `int64` | 数字 | `123456789` |
+| `uint`/`uint8`/`uint16`/`uint32` | 数字 | `7` |
+| `uint64` | 数字 | `9` |
+| `float`/`float32` | 数字 | `1.5` |
+| `double`/`float64` | 数字 | `3.25` |
+| `bool` | true/false | `true` |
+| `string` | 字符串 | `abc` |
+| `timestamp` | 数字（Unix 秒，Asia/Shanghai） | `2026-03-31 12:00:00` |
+| `Range64` | `{"Min":1,"Max":100}` | `1,100` 或 `1\|100` |
+| `Range32` | `{"Min":1,"Max":100}` | `1,100` 或 `1\|100` |
+| `Reward` | `{"PropType":1,"Incr":100}`（2 参数）<br>`{"PropType":1,"PropId":1001,"Incr":100}`（3 参数） | `金币,100` / `金币,1001,100` |
+| 枚举（如 `PropType`） | 数字（枚举值） | `金币`（查 @enum 查找键） |
+| `[]T` | 数组（`\|` 分隔）；空元素按零值转换（枚举→0），nil 转换结果（空 Reward/Range）跳过，空数组输出 `[]` | `1\|2\|3` |
 
-### 3.1 行式布局（`@struct`）
-
-| 行号 | 内容 | 示例 |
-|------|------|------|
-| 第 1 行 | 字段名（PascalCase） | `RoomId`, `MaxPlayers`, `EntryFee` |
-| 第 2 行 | 字段类型 | `uint32`, `int32`, `Reward` |
-| 第 3 行 | 中文描述 | `房间ID`, `最大玩家数`, `报名费` |
-| 第 4 行起 | 数据行 | `5001`, `5`, `金币,50` |
-
-### 3.2 示例
-
-"生成表"中声明：
-
-```
-@struct|房间配置@PveRoomConfig|map:RoomId|group:MaxPlayers
-```
-
-对应 Sheet（`房间配置`）：
-
-| RoomId | MaxPlayers | EntryFee |
-|--------|-----------|-----------|
-| uint32 | int32     | Reward   |
-| 房间ID  | 最大玩家数  | 报名费    |
-| 5001   | 5         | 金币,50   |
-| 5002   | 5         | 钻石,100  |
-
----
-
-## 四、字段类型系统
-
-### 4.1 可用类型一览
-
-| 类别 | Excel 写法 | 说明 | 数据示例 |
-|------|-----------|------|----------|
-| Proto 标量 | `int32`, `int64`, `uint32`, `uint64`, `float`, `double`, `bool`, `string`, `bytes` | 标准 Protobuf 类型（含 `sint*`/`fixed*`/`sfixed*` 变体） | `123`, `true` |
-| 内置别名 | `int`/`int8`/`int16` → `int32`；`uint`/`uint8`/`uint16` → `uint32`；`float32` → `float`；`float64` → `double` | 均为别名，Proto 层映射到对应标量 | 同上 |
-| `timestamp` | `timestamp` | 日期时间 → Unix 时间戳（int64） | `2026-03-31 12:00:00` |
-| `Range32` | `Range32` | int32 区间 `{Min, Max}` | `1,100` 或 `1\|100` |
-| `Range64` | `Range64` | int64 区间 `{Min, Max}` | `1,100` 或 `1\|100` |
-| `Reward` | `Reward` | 奖励 `{PropType, Incr}` | `金币,1000` |
-| 枚举 | `PropType` / `RoomType` 等 | 直接写枚举类型名 | `金币`（即枚举的查找键） |
-| 外部 message | `&EntryFee` / `*SomeType` | `&` 或 `*` 前缀引用 `struct.proto` 中的 message | 由该类型的转换器决定 |
-
-### 4.2 数组（repeated）
-
-类型前加 `[]`，数据用 `|` 分隔元素：`[]int32` → `1|2|3`，`[]Reward` → `金币,100|钻石,200`。
-
----
-
-## 五、枚举在配置表中的引用
-
-1. **字段直接是枚举类型**：第 2 行写枚举类型名（如 `RoomType`），数据行写枚举的**查找键**（如 `青铜`）。
-2. **枚举数组**：`[]PropType`，数据用 `|` 分隔（`金币|钻石`）。
-3. **自定义类型中包含枚举**：如 `Reward` 内部有 `PropType` 字段，数据格式由 `Reward` 的转换器决定（`金币,1000`），转换器内部通过 `domain.Convert("PropType", "金币", ...)` 递归解析。
-
-> Excel 中定义的枚举由 `gen_data.go` 自动注册转换器，无需手动处理。
-
----
-
-## 六、新增自定义数据类型
-
-### 6.1 步骤
-
-1. 在 `public/protocol/struct.proto` 中定义 message。
-2. 在 `server/framework/tools/xlsxtool/infra/builtin.go` 的 `init()` 中注册转换器。
-3. 在 Excel 第 2 行使用注册时指定的类型名。
-
-### 6.2 注册范式
+## 运行时倒回 pb 示例
 
 ```go
-domain.RegisterConvertor(
-    "ProtoMessage名",     // target: Proto 类型名
-    func(val string, field protoreflect.FieldDescriptor, msg *dynamicpb.Message) error {
-        // 解析 val → 构建子 message → 写入 msg
-        // 子字段通过 domain.Convert("基础类型", 子值, 子field, 子msg) 递归转换
-    },
-    "Proto类型",           // protoType: 供 proto 生成使用
-    "Excel中写的类型名",    // origins...: Excel 第 2 行可用的名称
-)
+// 业务服务加载 JSON 数据（fwatcher 或等值 loader）
+data := &pb.PveRoomConfigAry{}
+if err := json.Unmarshal(jsonBytes, data); err != nil { ... }
+// 交给现有 gen.go 查询层
+pve_room_config.Parse(data)
 ```
-
-### 6.3 转换函数要点
-
-- 用 `dynamicpb.NewMessage(field.Message())` 创建子 message
-- 子字段调用 `domain.Convert("int64"/"int32"/"string"/枚举类型名, 子值, ...)` 复用已有转换器
-- 根据 `field.IsList()` 决定 `Append` 还是 `Set`
-
-> 完整代码示例参考 `infra/builtin.go` 中的 `Reward`、`Range64` 实现或 `.agents/rules/config-conventions.md`。
-
----
-
-## 七、索引规则
-
-### 7.1 基础规则
-
-| 规则 | 格式 | 查询方法 | 适用场景 |
-|------|------|----------|----------|
-| `map` | `map:字段名` | `MGet字段名(key) → *pb.Xxx` | 主键/唯一键精确查找 |
-| `group` | `group:字段名` | `GGet字段名(key) → []*pb.Xxx` | 非唯一键分组 |
-| `range` | `range:字段名1,字段名2` | `Range字段名(args) → *pb.Xxx` | 等级/区间匹配（二分查找，返回 ≤ 给定值的最大记录） |
-
-`range` **要求数据行按 range 字段升序**。多字段时 key 用逗号分隔（`range:Level,Energy`）。
-
-### 7.2 组合规则
-
-用 `@` 连接两层索引：
-
-| 组合 | 格式 | 查询方法 | 含义 |
-|------|------|----------|------|
-| `map@map` | `map:A@map:B` | `MGetAB(a, b) → *pb.Xxx` | 两级精确查找 |
-| `map@group` | `map:A@group:B` | `MGetAGroupB(a, b) → []*pb.Xxx` | 先精确再分组 |
-| `group@range` | `group:A@range:B` | `GGetARangeB(a, b) → *pb.Xxx` | 先分组再二分查找 |
-| `group@map` | `group:A@map:B` | `GGetAMapB(a, b) → *pb.Xxx` | 先分组再精确查找 |
-
-示例：`@struct|关卡奖励@StageRewardConfig|group:StageType@map:SubId`
-
-```go
-func GGetStageType(stageType int32) []*pb.StageRewardConfig           // 基础 group
-func GGetStageTypeMapSubId(stageType int32, subId int32) *pb.StageRewardConfig  // 组合
-```
-
-### 7.3 通用查询方法（自动生成）
-
-| 方法 | 说明 |
-|------|------|
-| `SGet(pos int) *pb.Xxx` | 按位置获取单条 |
-| `LGet() []*pb.Xxx` | 获取全部（深拷贝） |
-| `Walk(func(*pb.Xxx) bool)` | 遍历 |
-
----
-
-## 八、命令参数
-
-```bash
-xlsxtool proto -x <xlsx目录> -o <proto输出目录>
-xlsxtool data  -x <xlsx目录> -p <proto目录> -o <数据输出目录> [-i <额外import路径>]
-xlsxtool code  -x <xlsx目录> -p <proto目录> -o <代码输出目录> [-i <额外import路径>]
-```
-
----
-
-## 九、产物一览
-
-| 命令 | 产物 | 位置 |
-|------|------|------|
-| `proto` | `enum.gen.proto`, `table.gen.proto`（含 `XxxAry` 包装 message） | `public/protocol/` |
-| `data` | `XxxConfig.conf`（prototext 格式） | `public/data/` |
-| `code` | `XxxConfig.gen.go`（含 `parse`/`SGet`/`LGet`/`Walk`/`Change` + 索引方法） | `server/common/table/{snake_name}/` |

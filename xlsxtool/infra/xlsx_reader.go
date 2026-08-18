@@ -24,7 +24,7 @@ func ReadTables(xlsxDir string) []*domain.Table {
 		}
 		ts, err := readFile(path)
 		if err != nil {
-			fmt.Printf("[Error] 解析%s失败 \n", filepath.Base(path))
+			fmt.Printf("[Error] 解析%s失败: %v\n", filepath.Base(path), err)
 			return nil
 		}
 		tables = append(tables, ts...)
@@ -33,7 +33,7 @@ func ReadTables(xlsxDir string) []*domain.Table {
 	return tables
 }
 
-// readFile 读取单个xlsx文件的生成表
+// readFile 读取单个xlsx文件的生成表指令
 func readFile(filename string) ([]*domain.Table, error) {
 	fp, err := excelize.OpenFile(filename)
 	if err != nil {
@@ -43,6 +43,7 @@ func readFile(filename string) ([]*domain.Table, error) {
 
 	rows, err := fp.GetRows("生成表")
 	if err != nil {
+		// 无"生成表"指令 sheet：非标准配置表，跳过（由调用方决定是否报错）
 		return nil, err
 	}
 

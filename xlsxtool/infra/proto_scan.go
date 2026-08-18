@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/hechh/tools/jsontool/domain"
+	"github.com/hechh/tools/xlsxtool/domain"
 )
 
 // ScanProtoDir 扫描proto目录,文本解析填充注册表（无 protobuf 依赖）

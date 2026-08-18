@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/hechh/tools/jsontool/domain"
+	"github.com/hechh/tools/xlsxtool/domain"
 )
 
 // GenJSON 生成JSON数据文件：每张表输出一个 XxxConfig.json，结构为 {"Ary":[...]}，

@@ -15,11 +15,11 @@ type ParseContext struct {
 }
 
 // NewParseContext 创建解析上下文
-func NewParseContext(registry *ProtoRegistry) *ParseContext {
+func NewParseContext() *ParseContext {
 	return &ParseContext{
 		EnumMap:   make(map[string]*Enum),
 		StructMap: make(map[string]*Struct),
-		Registry:  registry,
+		Registry:  NewProtoRegistry(),
 	}
 }
 
@@ -91,8 +91,8 @@ func (ctx *ParseContext) parseStruct(table *Table) {
 		}
 		item := &Field{
 			Name:       table.Rows[0][i],
-			Type:       ParseType(fieldType),
-			OriginType: fieldType, // 保存原始类型
+			Type:       ParseType(fieldType), // 规范化类型（repeated/枚举/标量）
+			OriginType: fieldType,            // 保存原始类型
 			Desc:       table.Rows[2][i],
 			Position:   int32(i) + 1,
 		}
@@ -126,7 +126,7 @@ func (ctx *ParseContext) parseStruct(table *Table) {
 	ctx.StructMap[st.Type] = st
 }
 
-// ParseType 类型名称规范化
+// ParseType 类型名称规范化：[] 前缀 → repeated，&/* 前缀去掉，其余按注册的 proto 类型映射
 func ParseType(str string) string {
 	switch {
 	case strings.HasPrefix(str, "[]"):

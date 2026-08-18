@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hechh/tools/jsontool/domain"
-	"github.com/hechh/tools/jsontool/infra"
+	"github.com/hechh/tools/xlsxtool/domain"
+	"github.com/hechh/tools/xlsxtool/infra"
 
 	"github.com/xuri/excelize/v2"
 )

@@ -4,8 +4,6 @@ import (
 	"strings"
 
 	"github.com/iancoleman/strcase"
-	"google.golang.org/protobuf/reflect/protoreflect"
-	"google.golang.org/protobuf/types/dynamicpb"
 )
 
 // EValue 枚举值
@@ -33,75 +31,39 @@ func (e *Enum) Add(desc, name string, value int32) {
 // Field 结构体字段
 type Field struct {
 	Name       string
-	Type       string
+	Type       string // 规范化后的类型（如 "repeated int32"、"PropType"），供 proto/code 生成
 	OriginType string // 原始类型,用于数据转换
-	ProtoType  string // Proto类型,用于数据转换
 	Desc       string
 	Position   int32
-	Descriptor protoreflect.FieldDescriptor
+	IsEnum     bool // 是否为枚举类型（Excel 类型名命中 @enum 表）
 }
 
-// Index 结构体索引
-type Index struct {
-	Type string
-	Name string
-	List []*Field
-	Next *Index
-}
-
-// Struct 结构体定义
-type Struct struct {
-	Type          string
-	AryDescriptor protoreflect.MessageDescriptor
-	Descriptor    protoreflect.MessageDescriptor
-	FieldList     []*Field
-	FieldMap      map[string]*Field
-	IndexList     []*Index
-	IndexMap      map[string]*Index
-	Rows          [][]string
-}
-
-// Table Excel表格原始数据
-type Table struct {
-	Sheet string
-	Type  string
-	Rules []string
-	Rows  [][]string
-	Token uint32
-}
-
-// Proto Proto类型元信息
-type Proto struct {
-	Type     string
-	Pkg      string
-	GoPkg    string
-	Filename string
-	IsEnum   bool
-}
-
-// TypeConverter 类型转换器
-type TypeConverter struct {
-	Target string
-	Proto  string
-	Origin string
-	Conv   ConvertFunc
-}
-
-// ConvertFunc 类型转换函数
-type ConvertFunc func(val string, field protoreflect.FieldDescriptor, msg *dynamicpb.Message) error
-
-// FieldParam 将单个字段转为参数声明字符串: "name Type" 或 "name pb.EnumType"
+// FieldParam 将单个字段转为参数声明字符串: "name Type"、"name pb.EnumType" 或 "name []pb.EnumType"
 func (f *Field) FieldParam() string {
 	name := strcase.ToLowerCamel(f.Name)
-	if f.Descriptor != nil && f.Descriptor.Kind() == protoreflect.EnumKind {
+	if strings.HasPrefix(f.Type, "repeated ") {
+		elem := strings.TrimPrefix(f.Type, "repeated ")
+		if f.IsEnum {
+			return name + " []pb." + elem
+		}
+		return name + " []" + elem
+	}
+	if f.IsEnum {
 		return name + " pb." + f.Type
 	}
 	return name + " " + f.Type
 }
 
-// FieldType 返回字段的 Go 类型字符串: "int32" 或 "pb.EnumType"
+// FieldType 返回字段的 Go 类型字符串: "int32"、"pb.EnumType" 或 "[]pb.EnumType"
 func (f *Field) FieldType() string {
-	if f.Descriptor != nil && f.Descriptor.Kind() == protoreflect.EnumKind {
+	if strings.HasPrefix(f.Type, "repeated ") {
+		elem := strings.TrimPrefix(f.Type, "repeated ")
+		if f.IsEnum {
+			return "[]pb." + elem
+		}
+		return "[]" + elem
+	}
+	if f.IsEnum {
 		return "pb." + f.Type
 	}
 	return f.Type
@@ -114,6 +76,14 @@ func (f *Field) FieldRef(ref string) string {
 		return ref + "." + f.Name
 	}
 	return name
+}
+
+// Index 结构体索引
+type Index struct {
+	Type string
+	Name string
+	List []*Field
+	Next *Index
 }
 
 // GetArg 生成方法参数列表。
@@ -173,14 +143,12 @@ func (d *Index) GetValue(isnext bool, ref string) string {
 // IsNext 判断是否有下一级索引（组合规则）。
 func (d *Index) IsNext() bool { return d.Next != nil }
 
-// IsNestedMap 判断是否为嵌套 map 容器类型（内层是 map，需独立字段名避免与基础容器冲突）。
-// group@range 复用基础 group 容器，不需要特殊处理。
+// IsNestedMap 判断是否为嵌套 map 容器类型（内层是 map）。
 func (d *Index) IsNestedMap() bool {
 	return d.IsNext() && strings.ToLower(d.Next.Type) == "map"
 }
 
 // CompositeFieldName 嵌套 map 容器的字段名，带 "Map" 后缀避免冲突。
-// 例：configId → configIdMap。非嵌套 map 时返回空串。
 func (d *Index) CompositeFieldName() string {
 	if !d.IsNestedMap() {
 		return ""
@@ -213,4 +181,65 @@ func (d *Index) CompositeNameSuffix() string {
 		}
 	}
 	return sb.String()
+}
+
+// Struct 结构体定义
+type Struct struct {
+	Type      string
+	FieldList []*Field
+	FieldMap  map[string]*Field
+	IndexList []*Index
+	IndexMap  map[string]*Index
+	Rows      [][]string
+}
+
+// Table Excel表格原始数据
+type Table struct {
+	Sheet string
+	Type  string
+	Rules []string
+	Rows  [][]string
+	Token uint32
+}
+
+// Proto Proto类型元信息（来自已有 proto 文件扫描，无 protobuf 依赖）
+type Proto struct {
+	Type     string
+	Pkg      string
+	GoPkg    string
+	Filename string
+	IsEnum   bool
+}
+
+// ProtoRegistry 轻量版 Proto类型注册表，仅记录类型名→来源文件
+type ProtoRegistry struct {
+	Types map[string]*Proto
+	Pkg   string
+	GoPkg string
+}
+
+// NewProtoRegistry 创建注册表
+func NewProtoRegistry() *ProtoRegistry {
+	return &ProtoRegistry{Types: make(map[string]*Proto)}
+}
+
+// Add 添加类型定义
+func (r *ProtoRegistry) Add(name string, p *Proto) {
+	r.Types[name] = p
+}
+
+// Get 获取类型定义
+func (r *ProtoRegistry) Get(name string) (*Proto, bool) {
+	p, ok := r.Types[name]
+	return p, ok
+}
+
+// SetPkgInfo 设置package信息（从首个扫描的proto文件提取）
+func (r *ProtoRegistry) SetPkgInfo(pkg, goPkg string) {
+	if pkg != "" && r.Pkg == "" {
+		r.Pkg = pkg
+	}
+	if goPkg != "" && r.GoPkg == "" {
+		r.GoPkg = goPkg
+	}
 }

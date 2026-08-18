@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -13,10 +14,12 @@ import (
 
 	"github.com/iancoleman/strcase"
 	"golang.org/x/tools/imports"
-	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
-func GenCode(ctx *domain.ParseContext, dstDir string, save func(string, []byte) error) error {
+// GenCode 生成 Go 查询代码（common/table/<snake>/XxxConfig.gen.go）
+func GenCode(ctx *domain.ParseContext, dstDir string, save func(string, string, []byte) error) error {
+	resolveEnumFlags(ctx)
+
 	tpl, err := template.New("templ").Funcs(template.FuncMap{
 		"ToSnake":                     strcase.ToSnake,
 		"ToSnakePkg":                  func(s string) string { return strcase.ToSnake(s) },
@@ -34,38 +37,27 @@ func GenCode(ctx *domain.ParseContext, dstDir string, save func(string, []byte) 
 		return err
 	}
 
-	buf := bytes.NewBuffer(nil)
 	for _, item := range ctx.Structs {
-		// 初始化 Field.Descriptor，供模板方法判断字段类型（enum等）
-		if item.Descriptor == nil {
-			item.Descriptor = ctx.Registry.FindMessage(item.Type)
-		}
-		if item.Descriptor != nil {
-			for _, field := range item.FieldList {
-				if field.Descriptor == nil {
-					field.Descriptor = item.Descriptor.Fields().ByName(protoreflect.Name(field.Name))
-				}
-			}
-		}
-
 		pkgname := strcase.ToSnake(item.Type)
+		buf := bytes.NewBuffer(nil)
 		if err := tpl.Execute(buf, item); err != nil {
 			return err
 		}
 
-		src := buf.Bytes()
 		filename := filepath.Join(dstDir, pkgname, item.Type+".gen.go")
-		//fmt.Printf("=== Generated code for %s ===\n%s\n=== END ===\n", filename, string(src))
-		processed, err := imports.Process(filename, src, nil)
+		processed, err := imports.Process(filename, buf.Bytes(), nil)
 		if err != nil {
 			return fmt.Errorf("imports.Process %s: %w", filename, err)
 		}
-		if err := save(path.Join(dstDir, pkgname, item.Type+".gen.go"), processed); err != nil {
+		outDir := path.Join(dstDir, pkgname)
+		if err := os.MkdirAll(outDir, 0o755); err != nil {
 			return err
 		}
-		buf.Reset()
+		if err := save(outDir, item.Type+".gen.go", processed); err != nil {
+			return err
+		}
+		fmt.Printf("[OK] 生成: %s\n", filename)
 	}
-
 	return nil
 }
 
@@ -140,19 +132,10 @@ func indexValueType(idx *domain.Index, structType string) string {
 	return "*pb." + structType + "S"
 }
 
-// fieldGoType 字段的 Go 类型字符串
+// fieldGoType 字段的 Go 类型字符串（复用 FieldType，含 repeated 枚举处理）
 func fieldGoType(f *domain.Field) string {
-	if f.Descriptor != nil && f.Descriptor.Kind() == protoreflect.EnumKind {
-		return "pb." + f.Type
-	}
-	return f.Type
+	return f.FieldType()
 }
-
-// ============== 组合规则模板函数（依赖模板上下文） ==============
-//
-// 纯逻辑判断已移入 domain.Index 方法：
-//   IsNext(), IsNestedMap(), CompositeFieldName(), CompositeNameSuffix(),
-//   GetArg(true/false), GetType(isnext), GetValue(isnext, ref)
 
 // compositeSearchExpr 组合规则中内层 range 的 sort.Search（使用 items 变量）
 func compositeSearchExpr(idx *domain.Index) string {
