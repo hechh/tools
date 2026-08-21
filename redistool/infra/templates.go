@@ -17,7 +17,8 @@ package {{.Pkg}}
 import (
 	"fmt"
 	"richgame/common/pb"
-	"time"
+{{if .NeedsDatabaseImport}}	"richgame/pkg/database"
+{{end}}	"time"
 
 	"github.com/hechh/framework/define"
 	"github.com/hechh/library/base/safe"
@@ -141,7 +142,8 @@ package {{.Pkg}}
 import (
 	"fmt"
 	"richgame/common/pb"
-
+{{if .NeedsDatabaseImport}}	"richgame/pkg/database"
+{{end}}
 	"github.com/hechh/framework/define"
 	"github.com/hechh/library/base/safe"
 	"github.com/hechh/library/redispool"

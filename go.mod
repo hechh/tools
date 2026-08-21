@@ -3,14 +3,12 @@ module github.com/hechh/tools
 go 1.26.1
 
 require (
-	github.com/bufbuild/protocompile v0.14.1
-	github.com/hechh/library v1.10.1
+	github.com/hechh/library v1.11.0
 	github.com/iancoleman/strcase v0.3.0
 	github.com/spf13/cast v1.10.0
 	github.com/spf13/cobra v1.10.2
 	github.com/xuri/excelize/v2 v2.11.0
 	golang.org/x/tools v0.48.0
-	google.golang.org/protobuf v1.36.11
 )
 
 require (

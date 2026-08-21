@@ -118,41 +118,42 @@ func (m *RedisHash) CacheFlag() string {
 }
 
 // HasDbConst DbName 是否为固定字符串（需要生成 DBNAME 常量）
+// 重构后数据库名统一通过 database 包常量（REDIS_GLOBAL/REDIS_PLAYER）或字面量引用，不再生成 DBNAME 常量
 func (m *RedisHash) HasDbConst() bool {
-	switch m.DbType {
-	case DbTypeGlobal:
-		return m.ShardField == nil
-	case DbTypeShards:
-		return false
-	default: // DbTypeStatic
-		return true
-	}
+	return false
 }
 
 // HasDbConst DbName 是否为固定字符串（需要生成 DBNAME 常量）
+// 重构后数据库名统一通过 database 包常量（REDIS_GLOBAL/REDIS_PLAYER）或字面量引用，不再生成 DBNAME 常量
 func (m *RedisString) HasDbConst() bool {
-	switch m.DbType {
-	case DbTypeGlobal:
-		return m.ShardField == nil
-	case DbTypeShards:
-		return false
-	default: // DbTypeStatic
-		return true
-	}
+	return false
+}
+
+// NeedsDatabaseImport 生成的代码是否需要引入 richgame/pkg/database 包
+// shards→database.REDIS_PLAYER、global 常量→database.REDIS_GLOBAL 会引用该包
+func (m *RedisHash) NeedsDatabaseImport() bool {
+	return m.DbType == DbTypeShards || (m.DbType == DbTypeGlobal && m.ShardField == nil)
+}
+
+// NeedsDatabaseImport 生成的代码是否需要引入 richgame/pkg/database 包
+// shards→database.REDIS_PLAYER、global 常量→database.REDIS_GLOBAL 会引用该包
+func (m *RedisString) NeedsDatabaseImport() bool {
+	return m.DbType == DbTypeShards || (m.DbType == DbTypeGlobal && m.ShardField == nil)
 }
 
 // ClientCallExpr 返回内联客户端获取表达式
+// redispool 只负责按名称连接 Redis 服务，业务分片由中间件处理
 func (m *RedisString) ClientCallExpr() string {
 	switch m.DbType {
 	case DbTypeGlobal:
 		if m.ShardField != nil {
-			return fmt.Sprintf(`redispool.GetByName(%s)`, m.ShardField.Name)
+			return fmt.Sprintf(`redispool.Get(%s)`, m.ShardField.Name)
 		}
-		return `redispool.GetByName(DBNAME)`
+		return `redispool.Get(database.REDIS_GLOBAL)`
 	case DbTypeShards:
-		return fmt.Sprintf(`redispool.GetByUid(%s)`, m.ShardField.Name)
+		return `redispool.Get(database.REDIS_PLAYER)`
 	default:
-		return fmt.Sprintf(`redispool.GetByName("%s")`, m.DbName)
+		return fmt.Sprintf(`redispool.Get("%s")`, m.DbName)
 	}
 }
 
@@ -277,17 +278,18 @@ func (m *RedisHash) GetFieldFmtArgs() string {
 }
 
 // ClientCallExpr 返回客户端获取表达式
+// redispool 只负责按名称连接 Redis 服务，业务分片由中间件处理
 func (m *RedisHash) ClientCallExpr() string {
 	switch m.DbType {
 	case DbTypeGlobal:
 		if m.ShardField != nil {
-			return fmt.Sprintf(`redispool.GetByName(%s)`, m.ShardField.Name)
+			return fmt.Sprintf(`redispool.Get(%s)`, m.ShardField.Name)
 		}
-		return `redispool.GetByName(DBNAME)`
+		return `redispool.Get(database.REDIS_GLOBAL)`
 	case DbTypeShards:
-		return fmt.Sprintf(`redispool.GetByUid(%s)`, m.ShardField.Name)
+		return `redispool.Get(database.REDIS_PLAYER)`
 	default:
-		return fmt.Sprintf(`redispool.GetByName("%s")`, m.DbName)
+		return fmt.Sprintf(`redispool.Get("%s")`, m.DbName)
 	}
 }
 
@@ -427,26 +429,26 @@ func (m *RedisString) BatchClientExpr() string {
 	switch m.DbType {
 	case DbTypeGlobal:
 		if m.ShardField != nil {
-			return fmt.Sprintf(`redispool.GetByName(%s)`, m.ShardField.Name)
+			return fmt.Sprintf(`redispool.Get(%s)`, m.ShardField.Name)
 		}
-		return `redispool.GetByName(DBNAME)`
+		return `redispool.Get(database.REDIS_GLOBAL)`
 	case DbTypeShards:
-		return `redispool.GetById(shardId)`
+		return `redispool.Get(database.REDIS_PLAYER)`
 	default:
-		return `redispool.GetByName(DBNAME)`
+		return fmt.Sprintf(`redispool.Get("%s")`, m.DbName)
 	}
 }
 func (m *RedisHash) BatchClientExpr() string {
 	switch m.DbType {
 	case DbTypeGlobal:
 		if m.ShardField != nil {
-			return fmt.Sprintf(`redispool.GetByName(%s)`, m.ShardField.Name)
+			return fmt.Sprintf(`redispool.Get(%s)`, m.ShardField.Name)
 		}
-		return `redispool.GetByName(DBNAME)`
+		return `redispool.Get(database.REDIS_GLOBAL)`
 	case DbTypeShards:
-		return `redispool.GetById(shardId)`
+		return `redispool.Get(database.REDIS_PLAYER)`
 	default:
-		return `redispool.GetByName(DBNAME)`
+		return fmt.Sprintf(`redispool.Get("%s")`, m.DbName)
 	}
 }
 
